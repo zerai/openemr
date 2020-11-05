@@ -3,3 +3,6 @@ rules:
   - base: master
     upstream: openemr:master
     mergeMethod: hardreset
+  - base: rel-502
+    upstream: openemr:rel-502
+    mergeMethod: hardreset
