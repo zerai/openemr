@@ -685,6 +685,7 @@ $partners = $x->_utility_array($x->x12_partner_factory());
                             $_REQUEST['master_from_date_form_encounter_date'] = date("Y-m-d");
                             $_REQUEST['master_to_date_form_encounter_date'] = date("Y-m-d");
                             $_REQUEST['radio_billing_billed'] = 0;
+                            $_REQUEST['query_drop_down_master_billing_x12_partner_id'] = "";
                         }
                         ?>
                     <?php
@@ -825,61 +826,65 @@ $partners = $x->_utility_array($x->x12_partner_factory());
             } else {
                 $unbilled = "%";
             }
-                $list = BillingReport::getBillsListBetween("%");
-            ?>
-            <?php
-            if (!isset($_POST["mode"])) {
-                if (!isset($_POST["from_date"])) {
-                    $from_date = date("Y-m-d");
-                } else {
-                    $from_date = $_POST["from_date"];
-                }
-                if (empty($_POST["to_date"])) {
-                    $to_date = '';
-                } else {
-                    $to_date = $_POST["to_date"];
-                }
-                if (!isset($_POST["code_type"])) {
-                    $code_type = "all";
-                } else {
-                    $code_type = $_POST["code_type"];
-                }
-                if (!isset($_POST["unbilled"])) {
-                    $unbilled = "on";
-                } else {
-                    $unbilled = $_POST["unbilled"];
-                }
-                if (!isset($_POST["authorized"])) {
-                    $my_authorized = "on";
-                } else {
-                    $my_authorized = $_POST["authorized"];
-                }
+            $list = BillingReport::getBillsListBetween("%");
+            // don't query the whole encounter table if no criteria selected
+            if (!$list && isset($_POST["mode"]) && array_key_exists('final_this_page_criteria', $_POST)) {
+                $alertmsg = "Search returned no results.";
+            } elseif (!$list && isset($_POST["mode"])) {
+                $alertmsg = "Please select at least one criteria.";
             } else {
-                $from_date = $_POST["from_date"] ?? null;
-                $to_date = $_POST["to_date"] ?? null;
-                $code_type = $_POST["code_type"] ?? null;
-                $unbilled = $_POST["unbilled"] ?? null;
-                $my_authorized = $_POST["authorized"] ?? null;
-            }
+                if (!isset($_POST["mode"])) {
+                    if (!isset($_POST["from_date"])) {
+                        $from_date = date("Y-m-d");
+                    } else {
+                        $from_date = $_POST["from_date"];
+                    }
+                    if (empty($_POST["to_date"])) {
+                        $to_date = '';
+                    } else {
+                        $to_date = $_POST["to_date"];
+                    }
+                    if (!isset($_POST["code_type"])) {
+                        $code_type = "all";
+                    } else {
+                        $code_type = $_POST["code_type"];
+                    }
+                    if (!isset($_POST["unbilled"])) {
+                        $unbilled = "on";
+                    } else {
+                        $unbilled = $_POST["unbilled"];
+                    }
+                    if (!isset($_POST["authorized"])) {
+                        $my_authorized = "on";
+                    } else {
+                        $my_authorized = $_POST["authorized"];
+                    }
+                } else {
+                    $from_date = $_POST["from_date"] ?? null;
+                    $to_date = $_POST["to_date"] ?? null;
+                    $code_type = $_POST["code_type"] ?? null;
+                    $unbilled = $_POST["unbilled"] ?? null;
+                    $my_authorized = $_POST["authorized"] ?? null;
+                }
 
-            if ($my_authorized == "on") {
-                $my_authorized = "1";
-            } else {
-                $my_authorized = "%";
-            }
+                if ($my_authorized == "on") {
+                    $my_authorized = "1";
+                } else {
+                    $my_authorized = "%";
+                }
 
-            if ($unbilled == "on") {
-                $unbilled = "0";
-            } else {
-                $unbilled = "%";
-            }
+                if ($unbilled == "on") {
+                    $unbilled = "0";
+                } else {
+                    $unbilled = "%";
+                }
 
-            if (isset($_POST["mode"]) && $_POST["mode"] == "bill") {
-                billCodesList($list);
-            }
-            ?>
+                if (isset($_POST["mode"]) && $_POST["mode"] == "bill") {
+                    billCodesList($list);
+                }
+                ?>
             <div class="table-responsive">
-                <table class="table table-hover table-sm">
+                <table class="table table-sm">
                     <?php
                         $divnos = 0;
                     if ($ret = BillingReport::getBillsBetween("%")) {
@@ -912,7 +917,7 @@ $partners = $x->_utility_array($x->x12_partner_factory());
                         $rhtml = "";
                         $lcount = 0;
                         $rcount = 0;
-                        $bgcolor = "";
+                        $bgcolor = "var(--light)";
                         $skipping = false;
 
                         $mmo_empty_mod = false;
@@ -944,7 +949,7 @@ $partners = $x->_utility_array($x->x12_partner_factory());
                             // This dumps all HTML for the previous encounter.
                                 if ($lhtml) {
                                     while ($rcount < $lcount) {
-                                        $rhtml .= "<tr><td colspan='9'></td></tr>";
+                                        $rhtml .= "<tr style='background-color: " . attr($bgcolor) . ";'><td colspan='9'></td></tr>";
                                         ++$rcount;
                                     }
                                     // This test handles the case where we are only listing encounters
@@ -954,8 +959,8 @@ $partners = $x->_utility_array($x->x12_partner_factory());
                                             $lhtml .= '</div>';
                                             $DivPut = 'no';
                                         }
-                                        echo "<tr>\n<td class='align-top' rowspan='" . attr($rcount) . "'>\n$lhtml</td>$rhtml\n";
-                                        echo "<tr><td colspan='9' height='5'></td></tr>\n\n";
+                                        echo "<tr style='background-color: " . attr($bgcolor) . ";'>\n<td class='align-top' rowspan='" . attr($rcount) . "'>\n$lhtml</td>$rhtml\n";
+                                        echo "<tr style='background-color: " . attr($bgcolor) . ";'><td colspan='9' height='5'></td></tr>\n\n";
                                         $encount = $encount ?? null;
                                         ++$encount;
                                     }
@@ -1008,8 +1013,8 @@ $partners = $x->_utility_array($x->x12_partner_factory());
                                 );
                                 $namecolor = ($res['count'] > 0) ? "black" : "#ff7777";
 
-                                $bgcolor = "#" . ((($encount ?? null) & 1) ? "FFFAEF" : "F8F8FF");
-                                echo "<tr><td colspan='9' height='5'></td></tr>\n";
+                                $bgcolor = ((($encount ?? null) & 1) ? "var(--light)" : "var(--gray300)");
+                                echo "<tr style='background-color: " . attr($bgcolor) . ";'><td colspan='9' height='5'></td></tr>\n";
                                 $lcount = 1;
                                 $rcount = 0;
                                 $oldcode = "";
@@ -1252,7 +1257,7 @@ $partners = $x->_utility_array($x->x12_partner_factory());
                             ++$rcount;
 
                             if ($rhtml) {
-                                $rhtml .= "<tr bgcolor='$bgcolor'>\n";
+                                $rhtml .= "<tr style='background-color: " . attr($bgcolor) . ";'>\n";
                             }
                             $rhtml .= "<td width='50'>";
                             if ($iter['id'] && $oldcode != $iter['code_type']) {
@@ -1345,7 +1350,7 @@ $partners = $x->_utility_array($x->x12_partner_factory());
                                     $date = $rowMoneyGot['date'];
                                     if ($PatientPay > 0) {
                                         if ($rhtml) {
-                                            $rhtml2 .= "<tr bgcolor='$bgcolor'>\n";
+                                            $rhtml2 .= "<tr style='background-color: " . attr($bgcolor) . ";'>\n";
                                         }
                                         $rhtml2 .= "<td width='50'>";
                                         $rhtml2 .= "<span class='text'>" . xlt('COPAY') . ": </span>";
@@ -1381,7 +1386,7 @@ $partners = $x->_utility_array($x->x12_partner_factory());
 
                         if ($lhtml) {
                             while ($rcount < $lcount) {
-                                $rhtml .= "<tr bgcolor='" . attr($bgcolor) . "'><td colspan='9'></td></tr>";
+                                $rhtml .= "<tr style='background-color: " . attr($bgcolor) . ";'><td colspan='9'></td></tr>";
                                 ++$rcount;
                             }
                             if (!$missing_mods_only || ($mmo_empty_mod && $mmo_num_charges > 1)) {
@@ -1389,8 +1394,8 @@ $partners = $x->_utility_array($x->x12_partner_factory());
                                     $lhtml .= '</div>';
                                     $DivPut = 'no';
                                 }
-                                echo "<tr bgcolor='" . attr($bgcolor) . "'>\n<td rowspan='" . attr($rcount) . "' valign='top' width='25%'>\n$lhtml</td>$rhtml\n";
-                                echo "<tr bgcolor='" . attr($bgcolor) . "'><td colspan='9' height='5'></td></tr>\n";
+                                echo "<tr style='background-color: " . attr($bgcolor) . ";'>\n<td rowspan='" . attr($rcount) . "' valign='top' width='25%'>\n$lhtml</td>$rhtml\n";
+                                echo "<tr style='background-color: " . attr($bgcolor) . ";'><td colspan='9' height='5'></td></tr>\n";
                             }
                         }
                     }
@@ -1403,6 +1408,7 @@ $partners = $x->_utility_array($x->x12_partner_factory());
 
     </div>
     <!--end of container div -->
+    <?php } // end if no criteria selected ?>
     <?php $oemr_ui->oeBelowContainerDiv(); ?>
     <script>
         set_button_states();
