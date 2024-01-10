@@ -11,10 +11,10 @@
  */
 
 require_once("../../globals.php");
-require_once("$srcdir/forms.inc");
-require_once("$srcdir/transactions.inc");
-require_once("$srcdir/lists.inc");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/forms.inc.php");
+require_once("$srcdir/transactions.inc.php");
+require_once("$srcdir/lists.inc.php");
+require_once("$srcdir/patient.inc.php");
 require_once("$srcdir/options.inc.php");
 
 use OpenEMR\Common\Csrf\CsrfUtils;
@@ -178,7 +178,7 @@ if ($imauthorized && $see_auth > 1) {
     if ($authorize) {
         $count = 0;
 
-        while (list($ppid,$patient) = each($authorize)) {
+        foreach ($authorize as $ppid => $patient) {
             $name = getPatientData($ppid);
 
             // If I want to see mine only and this patient is not mine, skip it.

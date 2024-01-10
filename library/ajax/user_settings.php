@@ -12,9 +12,10 @@
  */
 
 require_once(dirname(__FILE__) . "/../../interface/globals.php");
-require_once(dirname(__FILE__) . "/../user.inc");
+require_once(dirname(__FILE__) . "/../user.inc.php");
 
 use OpenEMR\Common\Csrf\CsrfUtils;
+use Symfony\Component\HttpFoundation\Response;
 
 if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
     CsrfUtils::csrfNotVerified();
@@ -22,7 +23,7 @@ if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
 
 //If 'mode' is either a 1 or 0 and 'target' ends with _expand
 //  Then will update the appropriate user _expand flag
-if (( $_POST['mode'] == 1 || $_POST['mode'] == 0 ) && ( substr($_POST['target'], -7, 7) == "_expand" )) {
+if ((isset($_POST['mode']) && ( $_POST['mode'] == 1 || $_POST['mode'] == 0 )) && ( substr($_POST['target'], -7, 7) == "_expand" )) {
   //set the user setting
     setUserSetting($_POST['target'], $_POST['mode']);
 }
@@ -36,3 +37,7 @@ if ((isset($_POST['lab'])) && (isset($_POST['val']))) {
 if ((isset($_POST['target'])) && (isset($_POST['setting']))) {
     setUserSetting($_POST['target'], $_POST['setting']);
 }
+
+// @todo This is crude, but if we make it here thre should be a proper response, so for now send a 200 but really we need better Response handling
+$res = new Response();
+$res->send();

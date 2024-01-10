@@ -13,7 +13,7 @@
 
 require_once('fee_sheet_classes.php');
 require_once("$srcdir/../custom/code_types.inc.php");
-require_once("$srcdir/../library/lists.inc");
+require_once("$srcdir/../library/lists.inc.php");
 require_once("code_check.php");
 
 /**
@@ -231,7 +231,7 @@ function issue_diagnoses($pid, $encounter)
         $codes = explode(";", $res['diagnosis']);
         foreach ($codes as $code_key) {
             $diagnosis = explode(":", $code_key);
-            $code = $diagnosis[1];
+            $code = $diagnosis[1] ?? '';
             $code_type = $diagnosis[0];
             $new_info = new code_info($code, $code_type, $title, $res['selected'] != 0);
 

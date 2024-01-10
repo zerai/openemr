@@ -1,92 +1,10 @@
 /* Bootstrap Code */
 
-/* Default Colors */
-$blue: #007bff;
-$indigo: #6610f2;
-$purple: #6f42c1;
-$pink: #e83e8c;
-$red: #dc3545;
-$orange: #fd7e14;
-$yellow: #ffc107;
-$green: #28a745;
-$teal: #20c997;
-$cyan: #17a2b8;
-$white: #fff;
-$black: #000;
-
-/* Default Grays */
-$gray-100: #f8f9fa;
-$gray-200: #e9ecef;
-$gray-300: #dee2e6;
-$gray-400: #ced4da;
-$gray-500: #adb5bd;
-$gray-600: #868e96;
-$gray-700: #495057;
-$gray-800: #343a40;
-$gray-900: #212529;
-
-/* Equivalents to bg-light/dark as well as default for gray */
-$light: $gray-100;
-$dark: $gray-800;
-$gray: $gray-600;
-
-$body-bg: $white;
-$body-color: $gray-900;
-
-/* Array of theme colors that can be added to */
-$theme-colors: (
-  primary: $blue,
-  secondary: $gray-100,
-  success: $green,
-  info: $cyan,
-  warning: $yellow,
-  danger: $red,
-  light: $gray-100,
-  dark: $gray-800,
-  body-color: $body-color
-);
-
-/* Array of random colors that can be added to */
-$colors: (
-  "blue": $blue,
-  "indigo": $indigo,
-  "purple": $purple,
-  "pink": $pink,
-  "red": $red,
-  "orange": $orange,
-  "yellow": $yellow,
-  "green": $green,
-  "teal": $teal,
-  "cyan": $cyan,
-  "white": $white,
-  "gray": $gray-600,
-  "gray-dark": $gray-800,
-  "black": $black,
-  "gray100": $gray-100,
-  "gray200": $gray-200,
-  "gray300": $gray-300,
-  "gray400": $gray-400,
-  "gray500": $gray-500,
-  "gray600": $gray-600,
-  "gray700": $gray-700,
-  "gray800": $gray-800,
-  "gray900": $gray-900
-);
-
-/* Above adds overrides to allow regular CSS coloring */
-
-$font-family-sans-serif: "Lato", "Helvetica", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-$font-size-base: 0.875rem;
-$rfs-base-value: 0.875rem;
-$font-family-base: $font-family-sans-serif;
-
+$black: #222;
 $close-color: $black;
 $close-text-shadow: 0 1 0 $black;
+$gray: #cdcdcd;
 
-$displays: none, inline, inline-block, block, table, table-row, table-cell, flex, inline-flex, initial, inherit;
-
-// Enables responsive text for Bootstrap
-$enable-responsive-font-sizes: true;
 // Import Bootstrap 4 SCSS Files before doing anything
 // This gets replaced in gulp now -- do not touch
 // bs4import
@@ -105,14 +23,69 @@ $fa-font-path: "../assets/@fortawesome/fontawesome-free/webfonts";
 
 @import "../navigation-slide/future-bootstrap";
 
-/* Overrides go here */
+:root {
+  --tabTopBorderWidth: 0.2em;
+  --gray300: #cdcdcd;
+}
 
-.btn-secondary {
-  background-color: rgba($black, 0.05) !important;
-  border-color: $gray-500 !important;
-  color: rgba($black, 0.87) !important;
+/* Overrides go here */
+@if $compact-theme == false {
+  .btn-secondary {
+    background-color: rgba($black, 0.05) !important;
+    border-color: $gray-500 !important;
+    color: rgba($black, 0.87) !important;
+  }
+
+  .tabSpan {
+    border-top: var(--tabTopBorderWidth) solid var(--primary) !important;
+    font-weight: 600 !important;
+    padding: 0.25em 0.4em !important;
+
+    .fa {
+      color: $gray-500 !important;
+
+      &:hover {
+        color: $gray-700 !important;
+      }
+    }
+  }
+
+  .tabsNoHover {
+    border-top: var(--tabTopBorderWidth) solid transparent !important;
+    font-weight: normal !important;
+  }
+
+  // MAIN NAV
+  // The top level of the menu
+  .menuLabel {
+    font-size: 0.9em !important;
+    font-weight: normal !important;
+    padding: 0.2em 0.35rem !important;
+    transition-duration: 0ms !important;
+  }
+
+  .dropdown .dropdown-menu {
+    top: auto !important;
+  }
+
+  .dropdown ul.dropdown-menu .dropdown ul.dropdown-menu {
+    top: 0 !important;
+  }
+
+  .menuLabel:hover,
+  .menuEntries li .menuLabel:hover,
+  .menuSection:hover {
+    background-color: lighten(theme-color("primary"), 40%) !important;
+  }
+
+  .acck {
+    font-size: 0.9em !important;
+  }
+
+  .tabSpan.tabsNoHover:hover {
+    background-color: $gray-300 !important;
+  }
 }
 
 /* search any */
 @import "../oe-bootstrap";
-@import "../oe-common/all-common-import";

@@ -19,14 +19,14 @@
 require_once(dirname(__FILE__) . "/../../globals.php");
 require_once($GLOBALS['srcdir'] . "/options.inc.php");
 
-use OpenEMR\Common\Csrf\CsrfUtils;
 use OpenEMR\Events\BoundFilter;
 use OpenEMR\Events\PatientFinder\PatientFinderFilterEvent;
 use OpenEMR\Events\PatientFinder\ColumnFilter;
 
-if (!CsrfUtils::verifyCsrfToken($_GET["csrf_token_form"])) {
-    CsrfUtils::csrfNotVerified();
-}
+// Not checking csrf since it breaks when opening up a patient in a new frame.
+//  Also note that csrf checking is not needed in this script because of following 2 reasons.
+//  1. cookie_samesite in OpenEMR is set to 'Strict', which is an effective security measure to stop csrf vulnerabilities.
+//  2. Additionally, in this script there are no state changes, thus it is not even sensitive to csrf vulnerabilities.
 
 $popup = empty($_REQUEST['popup']) ? 0 : 1;
 $searchAny = !empty($_GET['search_any']) && empty($_GET['sSearch']) ? $_GET['search_any'] : "";
@@ -41,8 +41,9 @@ $searchAny = !empty($_GET['search_any']) && empty($_GET['sSearch']) ? $_GET['sea
 if ($searchAny) {
     $_GET['sSearch'] = $searchAny;
     $layoutCols = sqlStatement(
-        "SELECT field_id FROM layout_options WHERE form_id = 'DEM' AND field_id not like ? AND uor !=0",
-        array('em\_%')
+        "SELECT field_id FROM layout_options WHERE form_id = 'DEM'
+            AND field_id not like ? AND field_id not like ? AND uor !=0",
+        array('em\_%', 'add%')
     );
     for ($iter = 0; $row = sqlFetchArray($layoutCols); $iter++) {
         $aColumns[] = $row['field_id'];
@@ -80,6 +81,53 @@ if (isset($_GET['iSortCol_0'])) {
             }
         }
     }
+}
+
+// Helper function for filtering dates. Returns a string for use with MySQL LIKE.
+// Examples (assuming US date formats):
+//   12       => Any date with "12" in it
+//   1977     => Any date with "1977" in it (therefore year 1977)
+//   197/12/1 => Dec. 1 of any year in the 1970's
+//   12/1/197 => Same
+//   12/1     => Dec. 1 of any year
+//   /1       => The first day of any month of any year
+// Any non-digit character may be used instead of "/".
+//
+function dateSearch($sSearch)
+{
+    // Determine if MDY date format is used, preferring Date Display Format from
+    // global settings if it's not YMD, otherwise guessing from country code.
+    $mdy = empty($GLOBALS['date_display_format']) ?
+        ($GLOBALS['phone_country_code'] == 1) : ($GLOBALS['date_display_format'] == 1);
+    // If no delimiters then just search the whole date.
+    $mystr = "%$sSearch%";
+    if (preg_match('/[^0-9]/', $sSearch)) {
+        // Delimiter found. Separate it all into year, month and day components.
+        $parts = preg_split('/[^0-9]/', $sSearch);
+        $parts[1] = $parts[1] ?? '';
+        $parts[2] = $parts[2] ?? '';
+        // If the first part is more than 2 digits then assume y/m/d format.
+        // Otherwise assume MDY or DMY format as appropriate.
+        if (strlen($parts[0]) <= 2) {
+            $parts = $mdy ? array($parts[2], $parts[0], $parts[1]) :
+                array($parts[2], $parts[1], $parts[0]);
+        }
+        // A single-digit day or month is zero-filled. Fill in other missing
+        // digits with wildcards. A 2-digit year like 19 becomes 19__, not __19.
+        $parts[0] = substr($parts[0] . '____', 0, 4);
+        if (strlen($parts[1]) == 0) {
+            $parts[1] = '__';
+        } elseif (strlen($parts[1]) == 1) {
+            $parts[1] = '0' . $parts[1];
+        }
+        if (strlen($parts[2]) == 0) {
+            $parts[2] = '__';
+        } elseif (strlen($parts[2]) == 1) {
+            $parts[2] = '0' . $parts[2];
+        }
+        $mystr = $parts[0] . '-' . $parts[1] . '-' . $parts[2];
+    }
+    return $mystr;
 }
 
 // Global filtering.
@@ -136,6 +184,9 @@ for ($i = 0; $i < count($aColumns); ++$i) {
             } else {// like search
                 array_push($srch_bind, ($sSearch . "%"), ($sSearch . "%"), ($sSearch . "%"));
             }
+        } elseif ($colname == 'DOB') {
+            $where .= "`" . escape_sql_column_name($colname, array('patient_data')) . "` LIKE ? ";
+            array_push($srch_bind, dateSearch($sSearch));
         } elseif ($searchMethodInPatientList) { // exact search
             $where .= "`" . escape_sql_column_name($colname, array('patient_data')) . "` LIKE ? ";
             array_push($srch_bind, $sSearch);
@@ -150,7 +201,7 @@ for ($i = 0; $i < count($aColumns); ++$i) {
 // This allows a module to subscribe to a 'patient-finder.filter' event and
 // add filtering before data ever gets to the user
 $patientFinderFilterEvent = new PatientFinderFilterEvent(new BoundFilter(), $aColumns, $columnFilters);
-$patientFinderFilterEvent = $GLOBALS["kernel"]->getEventDispatcher()->dispatch(PatientFinderFilterEvent::EVENT_HANDLE, $patientFinderFilterEvent, 10);
+$patientFinderFilterEvent = $GLOBALS["kernel"]->getEventDispatcher()->dispatch($patientFinderFilterEvent, PatientFinderFilterEvent::EVENT_HANDLE, 10);
 $boundFilter = $patientFinderFilterEvent->getBoundFilter();
 $customWhere = $boundFilter->getFilterClause();
 $srch_bind = array_merge($boundFilter->getBoundValues(), $srch_bind);
@@ -185,7 +236,7 @@ $iTotal = $row['count'];
 if (empty($where)) {
     $where = $customWhere;
 } else {
-    $where = "$customWhere AND $where";
+    $where = "$customWhere AND ( $where )";
 }
 $row = sqlQuery("SELECT COUNT(id) AS count FROM patient_data WHERE $where", $srch_bind);
 $iFilteredTotal = $row['count'];

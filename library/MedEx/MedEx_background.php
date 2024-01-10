@@ -28,12 +28,12 @@ $ignoreAuth = true;
 
 require_once(dirname(__FILE__) . "/../../interface/globals.php");
 require_once(dirname(__FILE__) . "/API.php");
-require_once(dirname(__FILE__) . "/../patient.inc");
+require_once(dirname(__FILE__) . "/../patient.inc.php");
 
 function start_MedEx()
 {
     $MedEx = new MedExApi\MedEx('MedExBank.com');
-    $logged_in = $MedEx->login('1');
+    $logged_in = $MedEx->login('2');
     if ($logged_in) {
         echo "Completed @ " . date("Y-m-d H:i:s") . "\n";
     } else {

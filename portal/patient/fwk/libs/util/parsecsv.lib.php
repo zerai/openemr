@@ -2,7 +2,6 @@
 
 class parseCSV
 {
-
     /*
      *
      * Class: parseCSV v0.4.3 beta
@@ -395,7 +394,7 @@ class parseCSV
                     if (! isset($chars [$ch] [$n])) {
                         $chars [$ch] [$n] = 1;
                     } else {
-                        $chars [$ch] [$n] ++;
+                        $chars [$ch] [$n]++;
                     }
                 }
             }

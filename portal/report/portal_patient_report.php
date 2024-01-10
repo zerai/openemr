@@ -30,13 +30,13 @@ if (isset($_SESSION['pid']) && isset($_SESSION['patient_portal_onsite_two'])) {
     exit;
 }
 
-$ignoreAuth = true;
-global $ignoreAuth;
+$ignoreAuth_onsite_portal = true;
+global $ignoreAuth_onsite_portal;
 
 require_once('../../interface/globals.php');
-require_once("$srcdir/lists.inc");
-require_once("$srcdir/forms.inc");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/lists.inc.php");
+require_once("$srcdir/forms.inc.php");
+require_once("$srcdir/patient.inc.php");
 
 use OpenEMR\Core\Header;
 
@@ -49,7 +49,7 @@ $auth_relaxed  = true; //AclMain::aclCheckCore('encounters', 'relaxed');
 $auth_med      = true; //AclMain::aclCheckCore('patients'  , 'med');
 $auth_demo     = true; //AclMain::aclCheckCore('patients'  , 'demo');
 
-$ignoreAuth = 1;
+$ignoreAuth_onsite_portal = true;
 ?>
 
 <?php Header::setupAssets('textformat'); ?>
@@ -470,7 +470,7 @@ while ($prow = sqlFetchArray($pres)) {
         if ($result["form_name"] == "New Patient Encounter") {
             if ($isfirst == 0) {
                 foreach ($registry_form_name as $var) {
-                    if ($toprint = $html_strings[$var]) {
+                    if ($toprint = ($html_strings[$var] ?? '')) {
                         foreach ($toprint as $var) {
                             print $var;
                         }
@@ -526,7 +526,7 @@ while ($prow = sqlFetchArray($pres)) {
                 }
             }
 
-            if (!is_array($html_strings[$form_name])) {
+            if (!is_array($html_strings[$form_name] ?? null)) {
                 $html_strings[$form_name] = array();
             }
 
@@ -540,7 +540,7 @@ while ($prow = sqlFetchArray($pres)) {
     }
 
     foreach ($registry_form_name as $var) {
-        if ($toprint = $html_strings[$var]) {
+        if ($toprint = $html_strings[$var] ?? null) {
             foreach ($toprint as $var) {
                 print $var;
             }
@@ -619,12 +619,17 @@ if ($db->ErrorMsg()) {
 }
 
 while ($result && !$result->EOF) {
-    echo "<li class='bold'>";
-    echo '<input type="checkbox" name="documents[]" value="' .
-        $result->fields['id'] . '">';
-    echo '&nbsp;&nbsp;<i>' .  text(xl_document_category($result->fields['name'])) . "</i>";
-    echo '&nbsp;&nbsp;' . xlt('Name') . ': <i>' . text($result->fields['document_name']) . '-' . text($result->fields['id']) . "</i>";
-    echo '</li>';
+    $fname = basename($result->fields['url']);
+    $extension = strtolower(substr($fname, strrpos($fname, ".")));
+    if ($extension !== '.zip' && $extension !== '.dcm') {
+        echo "<li class='bold'>";
+        echo '<input type="checkbox" name="documents[]" value="' .
+            $result->fields['id'] . '">';
+        echo '&nbsp;&nbsp;<i>' . text(xl_document_category($result->fields['name'])) . "</i>";
+        echo '&nbsp;&nbsp;' . xlt('Name') . ': <i>' . text(basename($result->fields['url'])) . "</i>";
+        echo '</li>';
+    }
+
     $result->MoveNext();
 }
 ?>
@@ -648,12 +653,12 @@ initReport = function(){
          });
     $(".genpdfrep").click(function() {  document.report_form.pdf.value = 1; $("#report_form").submit(); });
     $(".genportal").click(function() {  document.report_form.pdf.value = 2; $("#report_form").submit(); });
-    $("#genfullreport").click(function() { location.href='<?php echo "$rootdir/patient_file/encounter/$returnurl";?>'; });
+    $("#genfullreport").click(function() { location.href='<?php echo (!empty($returnurl)) ? "$rootdir/patient_file/encounter/$returnurl"  : '';?>'; });
     //$("#printform").click(function() { PrintForm(); });
     $(".issuecheckbox").click(function() { issueClick(this); });
 
     // check/uncheck all Forms of an encounter
-    $(".encounter").click(function() { SelectForms($(this)); });
+    $(".encounter").click(function() { SelectForms(this); });
 
     function showCustom(){
         var formval = $( "#report_form" ).serializeArray();
@@ -849,17 +854,16 @@ $(function () {
 // select/deselect the Forms related to the selected Encounter
 // (it ain't pretty code folks)
 var SelectForms = function (selectedEncounter) {
-    if ($(selectedEncounter).attr("checked")) {
-        $(selectedEncounter).parent().children().each(function(i, obj) {
-            $(this).children().each(function(i, obj) {
-                $(this).attr("checked", "checked");
+    if ($(selectedEncounter).prop("checked")) {
+        $(selectedEncounter).parent().children().each(function (i, obj) {
+            $(this).children().each(function (i, obj) {
+                $(this).prop("checked", true);
             });
         });
-    }
-    else {
-        $(selectedEncounter).parent().children().each(function(i, obj) {
-            $(this).children().each(function(i, obj) {
-                $(this).removeAttr("checked");
+    } else {
+        $(selectedEncounter).parent().children().each(function (i, obj) {
+            $(this).children().each(function (i, obj) {
+                $(this).prop("checked", false);
             });
         });
     }
@@ -868,11 +872,11 @@ var SelectForms = function (selectedEncounter) {
 // When an issue is checked, auto-check all the related encounters and forms
 function issueClick(issue) {
     // do nothing when unchecked
-    if (! $(issue).attr("checked")) return;
+    if (!$(issue).prop("checked")) return;
 
-    $("#report_form :checkbox").each(function(i, obj) {
+    $("#report_form :checkbox").each(function (i, obj) {
         if ($(issue).val().indexOf('/' + $(this).val() + '/') >= 0) {
-            $(this).attr("checked", "checked");
+            $(this).prop("checked", true);
         }
 
     });

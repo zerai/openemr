@@ -13,13 +13,16 @@
  * @author    Rod Roark <rod@sunsetsystems.com>
  * @author    Brady Miller <brady.g.miller@gmail.com>
  * @copyright Copyright (c) 2020 Brady Miller <brady.g.miller@gmail.com>
+ * @copyright Copyright (c) 2021 Rod Roark <rod@sunsetsystems.com>
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
 namespace OpenEMR\Common\Acl;
 
 use OpenEMR\Gacl\GaclApi;
+use OpenEMR\Services\UserService;
 use OpenEMR\Services\VersionService;
+use OpenEMR\Common\Acl\AclMain;
 
 class AclExtended
 {
@@ -235,10 +238,11 @@ class AclExtended
 
         //see if this user is gacl protected (ie. do not allow
         //removal from the Administrators group)
-        require_once(dirname(__FILE__) . '/../../../library/user.inc');
-        require_once(dirname(__FILE__) . '/../../../library/calendar.inc');
-        $userNametoID = getIDfromUser($user_name);
-        if (checkUserSetting("gacl_protect", "1", $userNametoID) || $user_name == "admin") {
+        require_once(dirname(__FILE__) . '/../../../library/user.inc.php');
+
+        $userNameToID = (new UserService())->getIdByUsername($user_name);
+
+        if (checkUserSetting("gacl_protect", "1", $userNameToID) || $user_name == "admin") {
             $gacl_protect = true;
         } else {
             $gacl_protect = false;
@@ -306,17 +310,19 @@ class AclExtended
                     $boolean_admin = 0;
                     $admin_id = $gacl->get_object_id('users', $user_name, 'ARO');
                     $arr_admin = $gacl->get_object_groups($admin_id, 'ARO', 'NO_RECURSE');
-                    foreach ($arr_admin as $value3) {
-                        $arr_admin_data = $gacl->get_group_data($value3, 'ARO');
-                        if (strcmp($arr_admin_data[2], 'admin') == 0) {
-                            $boolean_admin = 1;
+                    if (!empty($arr_admin)) {
+                        foreach ($arr_admin as $value3) {
+                            $arr_admin_data = $gacl->get_group_data($value3, 'ARO');
+                            if (strcmp($arr_admin_data[2], 'admin') == 0) {
+                                $boolean_admin = 1;
+                            }
                         }
-                    }
-                    if (!$boolean_admin) {
-                        foreach ($arr_all_group_ids as $value4) {
-                            $arr_temp = $gacl->get_group_data($value4, 'ARO');
-                            if ($arr_temp[2] == 'admin') {
-                                $gacl->add_group_object($value4, 'users', $user_name, 'ARO');
+                        if (!$boolean_admin) {
+                            foreach ($arr_all_group_ids as $value4) {
+                                $arr_temp = $gacl->get_group_data($value4, 'ARO');
+                                if ($arr_temp[2] == 'admin') {
+                                    $gacl->add_group_object($value4, 'users', $user_name, 'ARO');
+                                }
                             }
                         }
                     }
@@ -1011,5 +1017,142 @@ class AclExtended
         }
 
         return;
+    }
+
+
+    /**
+     * Shift the ACL, opposite of updateAcl()
+     * Tries to remove the object from a specific ACL if only one is found.
+     *
+     * @param  array   $array_acl_id_number   Array containing hopefully one element, which is an integer, and is identifier of acl to be updated.
+     * @param  string  $group_title           Title of group.
+     * @param  string  $object_section_name   Identifier of section
+     * @param  string  $object_section_title  Title of section
+     * @param  string  $object_name           Identifier of object
+     * @param  string  $object_title          Title of object
+     * @param  string  $acl_return_value      What the acl returns (string), usually 'write', 'addonly', 'wsome' or 'view'
+     */
+    public static function shiftAcl($array_acl_id_number, $group_title, $section_name, $section_title, $object_name, $object_title, $return_value)
+    {
+        $gacl = self::collectGaclApiObject();
+        $tmp_array = $gacl->search_acl($section_name, $object_name, false, false, $group_title, false, false, false, $return_value);
+        switch (count($tmp_array)) {
+            case 0:
+                echo "The '$object_title' object of the '$section_title' section is not found in the '$group_title' group '$return_value' ACL.</BR>";
+                break;
+            case 1:
+                $tmp_boolean = @$gacl->shift_acl($array_acl_id_number[0], null, null, null, null, array($section_name => array($object_name)));
+                if ($tmp_boolean) {
+                    echo "Successfully removed the '$object_title' object of the '$section_title' section into the '$group_title' group '$return_value' ACL.</BR>";
+                } else {
+                    echo "<B>ERROR</B>,unable to remove the '$object_title' object of the '$section_title' section into the '$group_title' group '$return_value' ACL.</BR>";
+                }
+                break;
+            default:
+                echo "<B>ERROR</B>, Multiple '$group_title' group '$return_value' ACLs with the '$object_title' object of the '$section_title' section are present.</BR>";
+                break;
+        }
+
+        return;
+    }
+
+    /**
+     * Update the provided array of ACOs that the designated group has permission for.
+     * This is an array keyed on ACO section ID with values that are arrays keyed on ACO ID
+     * with values that are arrays keyed on return value.
+     *
+     * @param  string  $group_name            Name of group
+     * @param  array   $perms                 The array to update
+     */
+    public static function getGroupPermissions($group_name, &$perms)
+    {
+        $gacl = self::collectGaclApiObject();
+        $acl_ids = $gacl->search_acl(false, false, false, false, $group_name, false, false, false, false);
+        foreach ($acl_ids as $acl_id) {
+            $acl = $gacl->get_acl($acl_id);
+            $ret = $acl['return_value'];
+            foreach ($acl['aco'] as $sectionid => $acos) {
+                if ($sectionid != 'placeholder') {
+                    foreach ($acos as $aco) {
+                        $perms[$sectionid][$aco][$ret] = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Return an array of all ACOs that the designated user has permission for.
+     * This is an array keyed on ACO section ID with values that are arrays keyed on ACO ID
+     * with values that are arrays keyed on return value.
+     *
+     * @param  string  $username              Name of user
+     * @return array                          The array of ACOs
+     */
+    public static function getUserPermissions($username = '')
+    {
+        if (!$username) {
+            $username = $_SESSION['authUser'];
+        }
+        $gacl = self::collectGaclApiObject();
+        $perms = array();
+        $username_acl_groups = self::aclGetGroupTitles($username); // array of roles for the user
+        if ($username_acl_groups) {
+            foreach ($username_acl_groups as $group_name) {
+                self::getGroupPermissions($group_name, $perms);
+            }
+        }
+        return $perms;
+    }
+
+    /**
+     * Test if the logged-in user has all of the permissions of the specified user.
+     *
+     * @param  string  $username              Name of user
+     * @return boolean
+     */
+    public static function iHavePermissionsOf($username)
+    {
+        $perms = self::getUserPermissions($username);
+        $myperms = self::getUserPermissions();
+        foreach ($perms as $sectionid => $acos) {
+            foreach ($acos as $aco => $rets) {
+                foreach ($rets as $ret => $dummy) {
+                    // Next test is just to speed things up.
+                    if (empty($myperms[$sectionid][$aco][$ret]) && empty($myperms[$sectionid][$aco]['write'])) {
+                        if (!aclMain::aclCheckCore($sectionid, $aco, '', $ret)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Test if the logged-in user has all of the permissions of the specified group.
+     *
+     * @param  string  $group_name            Name of group
+     * @return boolean
+     */
+    public static function iHaveGroupPermissions($group_name)
+    {
+        $perms = array();
+        self::getGroupPermissions($group_name, $perms);
+        $myperms = self::getUserPermissions();
+        foreach ($perms as $sectionid => $acos) {
+            foreach ($acos as $aco => $rets) {
+                foreach ($rets as $ret => $dummy) {
+                    // Next test is just to speed things up.
+                    if (empty($myperms[$sectionid][$aco][$ret]) && empty($myperms[$sectionid][$aco]['write'])) {
+                        if (!aclMain::aclCheckCore($sectionid, $aco, '', $ret)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
     }
 }

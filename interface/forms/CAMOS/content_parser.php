@@ -12,7 +12,8 @@
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
-require_once("../../../library/api.inc");
+require_once(dirname(__FILE__) . "/../../../library/api.inc.php");
+require_once(dirname(__FILE__) . "/../../forms/vitals/C_FormVitals.class.php");
 
 function addAppt($days, $time)
 {
@@ -23,8 +24,7 @@ function addAppt($days, $time)
 }
 function addVitals($weight, $height, $systolic, $diastolic, $pulse, $temp)
 {
-//This is based on code from /openemr/interface/forms/vitals/C_FormVitals.class.php
-//if it doesn't work, look there for changes.
+//This is based on code from /openemr/interface/forms/vitals/C_FormVitals.class.phpif it doesn't work, look there for changes.
     $_POST['process'] = 'true';
     $_POST['weight'] = $weight;
     $_POST['height'] = $height;
@@ -32,7 +32,6 @@ function addVitals($weight, $height, $systolic, $diastolic, $pulse, $temp)
     $_POST['bpd'] = $diastolic;
     $_POST['pulse'] = $pulse;
     $_POST['temperature'] = $temp;
-    require("../vitals/C_FormVitals.class.php");
     $c = new C_FormVitals();
     echo $c->default_action_process($_POST);
 }
@@ -280,7 +279,7 @@ function patient_age($birthday, $date)
     list($date_year,$date_month,$date_day) = explode("-", $date);
     $year_diff  = $date_year - $birth_year;
     $month_diff = $date_month - $birth_month;
-    $day_diff   = $date_day - $birth_day;
+    $day_diff   = (int) $date_day - $birth_day;
     if ($month_diff < 0) {
         $year_diff--;
     } elseif (($month_diff == 0) && ($day_diff < 0)) {

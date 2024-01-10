@@ -154,7 +154,8 @@ function &pcVarPrepForDisplay($s)
 }
 function &pcVarPrepHTMLDisplay($s)
 {
-    return pnVarPrepHTMLDisplay(postcalendar_removeScriptTags($s));
+    $postcalendarRemoveScriptTags = pnVarPrepHTMLDisplay(postcalendar_removeScriptTags($s));
+    return $postcalendarRemoveScriptTags;
 }
 function pcGetTopicName($topicid)
 {
@@ -164,7 +165,8 @@ function pcGetTopicName($topicid)
 function &postcalendar_makeValidURL($s)
 {
     if (empty($s)) {
-        return '';
+        $s = '';
+        return $s;
     }
 
     if (!preg_match('|^http[s]?:\/\/|i', $s)) {
@@ -175,10 +177,10 @@ function &postcalendar_makeValidURL($s)
 }
 function postcalendar_removeScriptTags($in)
 {
-    return preg_replace("/<script.*?>(.*?)<\/script>/", "", $in);
+    return preg_replace("/<script.*?>(.*?)<\/script>/", "", ($in ?? ''));
 }
 
-function postcalendar_getDate($format = '%Y%m%d')
+function postcalendar_getDate($format = 'Ymd')
 {
     list($Date, $jumpday, $jumpmonth, $jumpyear, $jumpdate) =
         pnVarCleanFromInput('Date', 'jumpday', 'jumpmonth', 'jumpyear', 'jumpdate');
@@ -197,15 +199,15 @@ function postcalendar_getDate($format = '%Y%m%d')
             }
 
             if (!isset($jumpday)) {
-                $jumpday   = strftime('%d', $time);
+                $jumpday   = date('d', $time);
             }
 
             if (!isset($jumpmonth)) {
-                $jumpmonth = strftime('%m', $time);
+                $jumpmonth = date('m', $time);
             }
 
             if (!isset($jumpyear)) {
-                $jumpyear  = strftime('%Y', $time);
+                $jumpyear  = date('Y', $time);
             }
         }
 
@@ -217,14 +219,15 @@ function postcalendar_getDate($format = '%Y%m%d')
     $m = substr($Date, 4, 2);
     $d = substr($Date, 6, 2);
     OpenEMR\Common\Session\SessionUtil::setSession('lastcaldate', "$y-$m-$d"); // remember the last chosen date
-    return strftime($format, mktime(0, 0, 0, $m, $d, $y));
+    return date($format, mktime(0, 0, 0, $m, $d, $y));
 }
 
-function &postcalendar_today($format = '%Y%m%d')
+function &postcalendar_today($format = 'Ymd')
 {
     $time = time();
+    $date = date($format, $time);
 
-    return strftime($format, $time);
+    return $date;
 }
 
 /**
@@ -521,12 +524,12 @@ function &postcalendar_userapi_getCategories()
         $categories[$i]['active']   = $active;
         $categories[$i]['sequence']   = $seq;
         $categories[$i]['event_repeat'] = $rtype;
-        $rspecs = unserialize($rspec, ['allowed_classes' => false]);
-        $categories[$i]['event_repeat_freq'] = $rspecs['event_repeat_freq'];
-        $categories[$i]['event_repeat_freq_type'] = $rspecs['event_repeat_freq_type'];
-        $categories[$i]['event_repeat_on_num'] = $rspecs['event_repeat_on_num'];
-        $categories[$i]['event_repeat_on_day'] = $rspecs['event_repeat_on_day'];
-        $categories[$i]['event_repeat_on_freq'] = $rspecs['event_repeat_on_freq'];
+        $rspecs = unserialize($rspec ?? '', ['allowed_classes' => false]);
+        $categories[$i]['event_repeat_freq'] = $rspecs['event_repeat_freq'] ?? null;
+        $categories[$i]['event_repeat_freq_type'] = $rspecs['event_repeat_freq_type'] ?? null;
+        $categories[$i]['event_repeat_on_num'] = $rspecs['event_repeat_on_num'] ?? null;
+        $categories[$i]['event_repeat_on_day'] = $rspecs['event_repeat_on_day'] ?? null;
+        $categories[$i]['event_repeat_on_freq'] = $rspecs['event_repeat_on_freq'] ?? null;
         $categories[$i]['event_recurrspec'] = $rspecs;
         $categories[$i]['event_duration'] = $duration;
         $categories[$i]['event_durationh'] = (int)($duration / (60 * 60));    //seconds divided by 60 seconds * 60 minutes;
@@ -743,9 +746,9 @@ function sort_byTitleD($a, $b)
 }
 function sort_byTimeA($a, $b)
 {
-    if ($a['startTime'] < $b['startTime']) {
+    if ($a['startTime'] < ($b['startTime'] ?? null)) {
         return -1;
-    } elseif ($a['startTime'] > $b['startTime']) {
+    } elseif ($a['startTime'] > ($b['startTime'] ?? null)) {
         return 1;
     }
 }

@@ -8,8 +8,6 @@
 
 namespace OpenEMR\Core;
 
-require_once dirname(__FILE__) . '/../../interface/globals.php';
-
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -26,11 +24,10 @@ use Symfony\Component\EventDispatcher\DependencyInjection\RegisterListenersPass;
  * @package OpenEMR
  * @subpackage Core
  * @author Robert Down <robertdown@live.com>
- * @copyright Copyright (c) 2017 Robert Down
+ * @copyright Copyright (c) 2017-2022 Robert Down
  */
 class Kernel
 {
-
     /** @var ContainerBuilder */
     private $container;
 
@@ -53,6 +50,16 @@ class Kernel
             $builder->compile();
             $this->container = $builder;
         }
+    }
+
+    /**
+     * Return true if the environment variable OPENEMR__ENVIRONMENT is set to dev.
+     *
+     * @return bool
+     */
+    public function isDev()
+    {
+        return (($_ENV['OPENEMR__ENVIRONMENT'] ?? '') === 'dev') ? true : false;
     }
 
     /**

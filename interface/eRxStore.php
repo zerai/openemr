@@ -11,11 +11,10 @@
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
-require_once(__DIR__ . "/../library/api.inc");
+require_once(__DIR__ . "/../library/api.inc.php");
 
 class eRxStore
 {
-
     /**
      * Strip away any non numerical characters
      * @param  string $value Value to sanitize
@@ -23,7 +22,12 @@ class eRxStore
      */
     public static function sanitizeNumber($value)
     {
-        return preg_replace('/[^-0-9.]/', '', $value);
+        $sanitized = '';
+        if ($value !== null) {
+            $sanitized = preg_replace('/[^-0-9.]/', '', $value);
+        }
+
+        return $sanitized;
     }
 
     /**
@@ -99,9 +103,9 @@ class eRxStore
     public function getPatientVitalsByPatientId($patientId)
     {
         $result = sqlQuery(
-            "SELECT FORM_VITALS.date, FORM_VITALS.id 
-            FROM form_vitals AS FORM_VITALS LEFT JOIN forms AS FORMS ON FORM_VITALS.id = FORMS.form_id 
-            WHERE FORM_VITALS.pid=? AND FORMS.deleted != '1' 
+            "SELECT FORM_VITALS.date, FORM_VITALS.id
+            FROM form_vitals AS FORM_VITALS LEFT JOIN forms AS FORMS ON FORM_VITALS.id = FORMS.form_id
+            WHERE FORM_VITALS.pid=? AND FORMS.deleted != '1'
             ORDER BY FORM_VITALS.date DESC",
             array($patientId)
         );
@@ -109,7 +113,7 @@ class eRxStore
         $data = formFetch("form_vitals", $result['id']);
 
         $weight = number_format($data['weight'] * 0.45359237, 2);
-        $height = round(number_format($data['height'] * 2.54, 2), 1);
+        $height = number_format(round($data['height'] * 2.54, 1), 2);
 
         return [
             'height' => $height,
@@ -152,9 +156,20 @@ class eRxStore
 				AND erx_uploaded = \'0\'
 				AND (
 					enddate is NULL
-					OR enddate = \'\'
 					OR enddate = \'0000-00-00\'
 				);',
+            array($patientId)
+        );
+    }
+
+    public function getPatientDiagnosisByPatientId($patientId)
+    {
+        return sqlStatement(
+            'SELECT diagnosis, begdate, enddate, title, date
+            FROM lists
+            WHERE `type` = \'medical_problem\'
+                AND pid = ?
+                ;',
             array($patientId)
         );
     }
@@ -278,7 +293,6 @@ class eRxStore
 				AND erx_uploaded = \'0\'
 				AND (? = 0
 					OR (enddate IS NULL
-						OR enddate = \'\'
 						OR enddate = \'0000-00-00\'
 						)
 					)
@@ -561,7 +575,6 @@ class eRxStore
 				AND title = ?
 				AND (
 					enddate IS NULL
-					OR enddate = \'\'
 					OR enddate = \'0000-00-00\'
 				);',
             array(
@@ -691,7 +704,6 @@ class eRxStore
 				AND erx_source = \'1\'
 				AND (
 					enddate IS NULL
-						OR enddate = \'\'
 						OR enddate = \'0000-00-00\'
 				);',
             array($patientId)

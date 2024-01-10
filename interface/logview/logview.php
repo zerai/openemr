@@ -16,10 +16,12 @@ use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Crypto\CryptoGen;
 use OpenEMR\Common\Csrf\CsrfUtils;
 use OpenEMR\Common\Logging\EventAuditLogger;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 
 if (!AclMain::aclCheckCore('admin', 'users')) {
-    die(xlt("Not Authorized"));
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Logs Viewer")]);
+    exit;
 }
 
 if (!empty($_GET)) {
@@ -104,7 +106,7 @@ if (!empty($_GET)) {
                         $err_message = 1;
                     }
 
-                    if ($_GET["form_patient"]) {
+                    if (!empty($_GET["form_patient"])) {
                         $form_patient = isset($_GET["form_patient"]) ? $_GET["form_patient"] : "";
                     }
 
@@ -113,7 +115,7 @@ if (!empty($_GET)) {
                     $form_user = isset($_REQUEST['form_user']) ? $_REQUEST['form_user'] : '';
                     $form_pid = isset($_REQUEST['form_pid']) ? $_REQUEST['form_pid'] : '';
 
-                    if ($form_patient == '') {
+                    if (empty($form_patient)) {
                         $form_pid = '';
                     }
 
@@ -151,7 +153,7 @@ if (!empty($_GET)) {
                                 </div>
                                 <label class="col-sm-1 col-form-label" for="end_date"><?php echo xlt('Patient'); ?>:</label>
                                 <div class="col-sm-3">
-                                    <input type='text' size='20' class='form-control' name='form_patient' id='form_patient' style='cursor:pointer;' value='<?php echo $form_patient ? attr($form_patient) : xla('Click To Select'); ?>' onclick='sel_patient()' title='<?php echo xla('Click to select patient'); ?>' />
+                                    <input type='text' size='20' class='form-control' name='form_patient' id='form_patient' style='cursor:pointer;' value='<?php echo (!empty($form_patient)) ? attr($form_patient) : xla('Click To Select'); ?>' onclick='sel_patient()' title='<?php echo xla('Click to select patient'); ?>' />
                                     <input type='hidden' name='form_pid' value='<?php echo attr($form_pid); ?>' />
                                 </div>
                             </div>
@@ -162,7 +164,7 @@ if (!empty($_GET)) {
                                     <?php
                                     echo " <option value=''>" . xlt('All') . "</option>\n";
                                     while ($urow = sqlFetchArray($ures)) {
-                                        if (!trim($urow['username'])) {
+                                        if (empty(trim($urow['username'] ?? ''))) {
                                             continue;
                                         }
 
@@ -270,7 +272,7 @@ if (!empty($_GET)) {
                                     </select>
                                 </div>
                             </div>
-                            <input type="hidden" name="event" value="<?php echo attr($event); ?>" />
+                            <input type="hidden" name="event" value="<?php echo attr($event ?? ''); ?>" />
                             <div class="btn-group" role="group">
                                 <a href="javascript:document.theform.submit();" class="btn btn-secondary btn-save"><?php echo xlt('Submit'); ?></a>
                             </div>
@@ -428,12 +430,12 @@ if (!empty($_GET)) {
                                 <tr>
                                 <td><?php echo text(oeFormatDateTime($iter["date"])); ?></td>
                             <td><?php echo xlt($iter["event"]); ?></td>
-                            <td><?php echo xlt($iter["category"]); ?></td>
+                            <td><?php echo xlt($iter["category"] ?? ''); ?></td>
                             <td><?php echo text($iter["user"]); ?></td>
-                            <td><?php echo text($iter["crt_user"]); ?></td>
-                            <td><?php echo text($iter["groupname"]); ?></td>
+                            <td><?php echo text($iter["crt_user"] ?? ''); ?></td>
+                            <td><?php echo text($iter["groupname"] ?? ''); ?></td>
                             <td><?php echo text($iter["patient_id"]); ?></td>
-                            <td><?php echo text($iter["success"]); ?></td>
+                            <td><?php echo text($iter["success"] ?? ''); ?></td>
                             <td> </td>
                             <td><?php echo text($comments); ?></td>
                         </tr>

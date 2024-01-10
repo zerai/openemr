@@ -21,10 +21,10 @@
  */
 
 require_once("../globals.php");
-require_once("$srcdir/forms.inc");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/forms.inc.php");
+require_once("$srcdir/patient.inc.php");
 require_once "$srcdir/options.inc.php";
-require_once("$srcdir/calendar.inc");
+require_once("$srcdir/calendar.inc.php");
 require_once("$srcdir/appointments.inc.php");
 
 use OpenEMR\Billing\EDI270;
@@ -79,10 +79,22 @@ if ($form_provider != "") {
 }
 
 if ($exclude_policy != "") {
-    $arrayExplode   =   explode(",", $exclude_policy);
-    array_walk($arrayExplode, 'OpenEMR\Billing\EDI270::arrFormated');
-    $exclude_policy = implode(",", $arrayExplode);
-    $where .= " AND i.policy_number NOT IN ($exclude_policy)";
+    $arrayExplode = explode(",", $exclude_policy);
+    $excludePlacemakers = "";
+    $firstFlag = true;
+    foreach ($arrayExplode as $processExclude) {
+        // grab the string between the _ character and the ending ' character (and then drop these characters)
+        $processExclude = strstr($processExclude, '_');
+        $processExclude = substr($processExclude, 1, strlen($processExclude) - 2);
+        array_push($sqlBindArray, $processExclude);
+        if ($firstFlag) {
+            $excludePlacemakers = "?";
+            $firstFlag = false;
+        } else {
+            $excludePlacemakers .= ",?";
+        }
+    }
+    $where .= " AND i.policy_number NOT IN ($excludePlacemakers)";
 }
     $where .= " AND (i.policy_number is NOT NULL AND i.policy_number != '')";
     $where .= " GROUP BY p.pid ORDER BY c.name";
@@ -421,7 +433,7 @@ if ($exclude_policy != "") {
                                                     <?php echo xlt('Create batch'); ?>
                                                     <input type='hidden' name='form_savefile' id='form_savefile' value=''></input>
 
-                                                    <?php if ($GLOBALS['enable_oa']) {
+                                                    <?php if ($GLOBALS['enable_eligibility_requests']) {
                                                         echo "<a href='#' class='btn btn-secondary btn-transmit' onclick='return validate_batch(true);'>" . xlt('Request Eligibility') . "</a>\n";
                                                     }
                                                     ?>

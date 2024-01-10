@@ -28,7 +28,7 @@ xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
 
 /* for $GLOBALS[], ?? */
 require_once(dirname(__FILE__).'/../../globals.php');
-require_once($GLOBALS['srcdir'].'/api.inc');
+require_once($GLOBALS['srcdir'].'/api.inc.php');
 /* for generate_display_field() */
 require_once($GLOBALS['srcdir'].'/options.inc.php');
 
@@ -115,7 +115,7 @@ $lists = array(]]></xsl:text>
             /* remove the time-of-day from the 'date' fields. */
             if ($field_names[$key] == 'date')
             if ($value != '') {
-              $dateparts = split(' ', $value);
+              $dateparts = explode(' ', $value);
               $value = $dateparts[0];
             }
 

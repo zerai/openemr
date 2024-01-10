@@ -14,11 +14,13 @@
 
 namespace OpenEMR\Services;
 
+use OpenEMR\Common\Database\QueryUtils;
 use Particle\Validator\Validator;
+use OpenEMR\Common\Uuid\UuidRegistry;
 
+// TODO: @adunsulag should we rename this to be ListOptions service since that is the table it corresponds to?  The lists table is a patient issues table so this could confuse new developers
 class ListService
 {
-
   /**
    * Default constructor.
    */
@@ -34,8 +36,8 @@ class ListService
         $validator->required('type')->lengthBetween(2, 255);
         $validator->required('pid')->numeric();
         $validator->optional('diagnosis')->lengthBetween(2, 255);
-        $validator->required('begdate')->datetime('Y-m-d');
-        $validator->optional('enddate')->datetime('Y-m-d');
+        $validator->optional('begdate')->datetime('Y-m-d H:i:s');
+        $validator->optional('enddate')->datetime('Y-m-d H:i:s');
 
         return $validator->validate($list);
     }
@@ -48,17 +50,45 @@ class ListService
 
         $results = array();
         while ($row = sqlFetchArray($statementResults)) {
+            $row['uuid'] = UuidRegistry::uuidToString($row['uuid']);
             array_push($results, $row);
         }
 
         return $results;
     }
 
-    public function getOptionsByListName($list_name)
+    public function getListOptionsForLists($lists)
     {
-        $sql = "SELECT * FROM list_options WHERE list_id = ?";
+        $sql = "SELECT * FROM list_options WHERE list_id IN (" . str_repeat('?,', count($lists) - 1) . "?) "
+            . " ORDER BY list_id, seq";
+        $records = QueryUtils::fetchRecords($sql, $lists, false);
+        return $records;
+    }
 
-        $statementResults = sqlStatement($sql, array($list_name));
+    public function getListIds()
+    {
+        $sql = "SELECT DISTINCT list_id FROM list_options ORDER BY list_id";
+        return QueryUtils::fetchTableColumn($sql, 'list_id', []);
+    }
+
+    public function getOptionsByListName($list_name, $search = array())
+    {
+        $sql = "SELECT * FROM list_options WHERE list_id = ? ";
+        $binding = [$list_name];
+
+
+        $whitelisted_columns = [
+            "option_id", "seq", "is_default", "option_value", "mapping", "notes", "codes", "activity", "edit_options", "toggle_setting_1", "toggle_setting_2", "subtype"
+        ];
+        foreach ($whitelisted_columns as $column) {
+            if (!empty($search[$column])) {
+                $sql .= " AND $column = ? ";
+                $binding[] = $search[$column];
+            }
+        }
+        $sql .= " ORDER BY `seq` ";
+
+        $statementResults = sqlStatementThrowException($sql, $binding);
 
         $results = array();
         while ($row = sqlFetchArray($statementResults)) {
@@ -66,6 +96,22 @@ class ListService
         }
 
         return $results;
+    }
+
+    /**
+     * Returns the list option record that was found
+     * @param $list_id
+     * @param $option_id
+     * @param array $search
+     * @return array Record
+     */
+    public function getListOption($list_id, $option_id)
+    {
+        $records = $this->getOptionsByListName($list_id, ['option_id' => $option_id]);
+        if (!empty($records)) { // should only be one record
+            return $records[0];
+        }
+        return null;
     }
 
     public function getOne($pid, $list_type, $list_id)

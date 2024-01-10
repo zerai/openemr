@@ -10,14 +10,14 @@
  * @author  Robert Down <robertdown@live.com>
  * @copyright Copyright (c) 2012 Brady Miller <brady.g.miller@gmail.com>
  * @copyright Copyright (c) 2017 Jason 'Toolbox' Oettinger <jason@oettinger.email>
- * @copyright Copyright (c) 2017 Robert Down <robertdown@live.com>
+ * @copyright Copyright (c) 2017-2023 Robert Down <robertdown@live.com>
  * @license https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
 require_once(dirname(__FILE__) . "/../../interface/globals.php");
 require_once($GLOBALS['srcdir'] . "/maviq_phone_api.php");
 require_once($GLOBALS['srcdir'] . "/reminders.php");
-require_once($GLOBALS['srcdir'] . "/report_database.inc");
+require_once($GLOBALS['srcdir'] . "/report_database.inc.php");
 
 use OpenEMR\Core\Header;
 
@@ -97,7 +97,7 @@ if (empty($report_id) && !empty($GLOBALS['pat_rem_clin_nice'])) {
                 <span class="text"><?php echo xlt('Total successful reminders sent via email') . ": " . text($send_rem_log['number_success_emails']); ?></span><br />
                 <span class="text"><?php echo xlt('Total failed reminders sent via email') . ": " . text($send_rem_log['number_failed_emails']); ?></span><br />
                 <span class="text"><?php echo xlt('Total successful reminders sent via phone') . ": " . text($send_rem_log['number_success_calls']); ?></span><br />
-                <span class="text"><?php echo xlt('Total failed reminders sent via phone') . ": " . text($send_rem_log['number_unchanged_reminders']); ?></span><br />
+                <span class="text"><?php echo xlt('Total failed reminders sent via phone') . ": " . text($send_rem_log['number_unchanged_reminders'] ?? ''); ?></span><br />
 
                 <br /><span class="text"><?php echo xlt('(Email delivery is immediate, while automated VOIP is sent to the service provider for further processing.)')?></span><br />
                 <?php } // end of ($results_log['type'] != "process_reminders") ?>

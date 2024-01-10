@@ -17,11 +17,13 @@ require_once("$srcdir/options.inc.php");
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 
 // Ensure authorized
 if (!AclMain::aclCheckCore('admin', 'users')) {
-    die(xlt("Unauthorized"));
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Edit Facility Specific User Information")]);
+    exit;
 }
 
 // Ensure variables exist
@@ -167,7 +169,6 @@ if (!isset($_GET["user_id"]) || !isset($_GET["fac_id"])) {
                 <input type=hidden name=mode value="facility_user_id">
                 <input type=hidden name=user_id value="<?php echo attr($_GET["user_id"]); ?>">
                 <input type=hidden name=fac_id value="<?php echo attr($_GET["fac_id"]); ?>">
-                <?php $iter = sqlQuery("select * from facility_user_ids where id=?", array($my_id)); ?>
 
                 <table class="table table-borderless ">
                     <tr>
@@ -195,7 +196,7 @@ if (!isset($_GET["user_id"]) || !isset($_GET["fac_id"])) {
                                 <?php
                                 $entry_data = sqlQuery("SELECT `field_value` FROM `facility_user_ids` " .
                                     "WHERE `uid` = ? AND `facility_id` = ? AND `field_id` = ?", array($user_info['id'], $fac_info['id'], $layout_entry['field_id']));
-                                echo generate_form_field($layout_entry, $entry_data['field_value']);
+                                echo generate_form_field($layout_entry, ($entry_data['field_value'] ?? ''));
                                 ?>
                             </td>
                         </tr>
@@ -216,7 +217,7 @@ if (!isset($_GET["user_id"]) || !isset($_GET["fac_id"])) {
         </div>
     </div>
     <!-- include support for the list-add selectbox feature -->
-    <?php include $GLOBALS['fileroot'] . "/library/options_listadd.inc"; ?>
+    <?php require $GLOBALS['fileroot'] . "/library/options_listadd.inc.php"; ?>
 
     <script>
         <?php echo $date_init; ?>

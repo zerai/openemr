@@ -19,11 +19,18 @@
  */
 
 require_once("../globals.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once("../../custom/code_types.inc.php");
 
+use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
+
+if (!AclMain::aclCheckCore('patients', 'med')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Syndromic Surveillance - Non Reported Issues")]);
+    exit;
+}
 
 if (!empty($_POST)) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
@@ -73,21 +80,6 @@ function mapCodeType($incode)
 
 $from_date = (!empty($_POST['form_from_date'])) ? DateToYYYYMMDD($_POST['form_from_date']) : '';
 $to_date = (!empty($_POST['form_to_date'])) ? DateToYYYYMMDD($_POST['form_to_date']) : '';
-
-//
-$form_code = isset($_POST['form_code']) ? $_POST['form_code'] : array();
-//
-if (empty($form_code)) {
-    $query_codes = '';
-} else {
-    $query_codes = 'c.id in (';
-    foreach ($form_code as $code) {
-        $query_codes .= add_escape_custom($code) . ",";
-    }
-
-      $query_codes = substr($query_codes, 0, -1);
-      $query_codes .= ') and ';
-}
 
 //
 function tr($a)
@@ -143,6 +135,19 @@ if (!empty($to_date)) {
 
 if (!empty($from_date) || !empty($to_date)) {
     $query .= " and " ;
+}
+
+$form_code = isset($_POST['form_code']) ? $_POST['form_code'] : array();
+if (empty($form_code)) {
+    $query_codes = '';
+} else {
+    $query_codes = 'c.id in (';
+    foreach ($form_code as $code) {
+        $query_codes .= '?,';
+        array_push($sqlBindArray, $code);
+    }
+    $query_codes = substr($query_codes, 0, -1);
+    $query_codes .= ') and ';
 }
 
   $query .= "l.pid=p.pid and " .
@@ -221,7 +226,7 @@ if (!empty($_POST['form_get_hl7']) && ($_POST['form_get_hl7'] === 'true')) {
         $content .= "PID|" .
         "1|" . // 1. Set id
         "|" .
-        $r['patientid'] . "^^^^MR" . "|" . // 3. (R) Patient indentifier list
+        $r['patientid'] . "^^^^MR" . "|" . // 3. (R) Patient identifier list
         "|" . // 4. (B) Alternate PID
         "^^^^^^~^^^^^^S" . "|" . // 5.R. Name
         "|" . // 6. Mather Maiden Name

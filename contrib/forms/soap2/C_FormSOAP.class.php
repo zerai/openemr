@@ -1,11 +1,10 @@
 <?php
 
-require_once($GLOBALS['fileroot'] . "/library/forms.inc");
+require_once($GLOBALS['fileroot'] . "/library/forms.inc.php");
 require_once("FormSOAP.class.php");
 
 class C_FormSOAP extends Controller
 {
-
     var $template_dir;
 
     function __construct($template_mod = "general")

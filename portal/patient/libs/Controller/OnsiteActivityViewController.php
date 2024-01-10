@@ -13,7 +13,7 @@
 /**
  * import supporting libraries
  */
-require_once("AppBaseController.php");
+require_once("AppBasePortalController.php");
 require_once("Model/OnsiteActivityView.php");
 
 /**
@@ -26,9 +26,8 @@ require_once("Model/OnsiteActivityView.php");
  * @author  ClassBuilder
  * @version 1.0
  */
-class OnsiteActivityViewController extends AppBaseController
+class OnsiteActivityViewController extends AppBasePortalController
 {
-
     /**
      * Override here for any controller-specific functionality
      *
@@ -50,7 +49,7 @@ class OnsiteActivityViewController extends AppBaseController
         if (isset($_SESSION['authUser'])) {
             $user = $_SESSION['authUser'];
         } else {
-            header("refresh:6;url= ./provider");
+            header("refresh:5;url= ./provider");
             echo 'Redirecting in about 5 secs. Session shared with Onsite Portal<br /> Shared session not allowed!.';
             exit();
         }
@@ -188,7 +187,6 @@ class OnsiteActivityViewController extends AppBaseController
         $sql .= "From onsite_portal_activity Left Join
   patient_data On onsite_portal_activity.patient_id = patient_data.pid Left Join
   users On patient_data.providerID = users.id ";
-        // $sql .= "Where onsite_portal_activity.status = 'waiting'";
         try {
             $this->Phreezer->DataAdapter->Execute($sql);
         } catch (Exception $ex) {

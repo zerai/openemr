@@ -23,6 +23,12 @@ use Esign\Api;
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
 use OpenEMR\Core\Header;
+use OpenEMR\Events\Main\Tabs\RenderEvent;
+use OpenEMR\Services\LogoService;
+use Symfony\Component\Filesystem\Path;
+
+$logoService = new LogoService();
+$menuLogo = $logoService->getLogo('core/menu/primary/');
 
 // Ensure token_main matches so this script can not be run by itself
 //  If do not match, then destroy the session and go back to login screen
@@ -45,6 +51,7 @@ $esignApi = new Api();
 ?>
 <!DOCTYPE html>
 <html>
+
 <head>
     <title><?php echo text($openemr_name); ?></title>
 
@@ -52,11 +59,11 @@ $esignApi = new Api();
         // This is to prevent users from losing data by refreshing or backing out of OpenEMR.
         //  (default behavior, however, this behavior can be turned off in the prevent_browser_refresh global)
         <?php if ($GLOBALS['prevent_browser_refresh'] > 0) { ?>
-        window.addEventListener('beforeunload', (event) => {
-            if (!timed_out) {
-                event.returnValue = <?php echo xlj('Recommend not leaving or refreshing or you may lose data.'); ?>;
-            }
-        });
+            window.addEventListener('beforeunload', (event) => {
+                if (!timed_out) {
+                    event.returnValue = <?php echo xlj('Recommend not leaving or refreshing or you may lose data.'); ?>;
+                }
+            });
         <?php } ?>
 
         <?php require($GLOBALS['srcdir'] . "/restoreSession.php"); ?>
@@ -68,7 +75,7 @@ $esignApi = new Api();
         window.name = "main";
 
         // This flag indicates if another window or frame is trying to reload the login
-        // page to this top-level window.  It is set by javascript returned by auth.inc
+        // page to this top-level window.  It is set by javascript returned by auth.inc.php
         // and is checked by handlers of beforeunload events.
         var timed_out = false;
         // some globals to access using top.variable
@@ -80,8 +87,15 @@ $esignApi = new Api();
         var userDebug = <?php echo js_escape($GLOBALS['user_debug']); ?>;
         var webroot_url = <?php echo js_escape($web_root); ?>;
         var jsLanguageDirection = <?php echo js_escape($_SESSION['language_direction']); ?>;
-        var jsGlobals = {};
+        var jsGlobals = {}; // this should go away and replace with just global_enable_group_therapy
+        // used in tabs_view_model.js.
+        jsGlobals.enable_group_therapy = <?php echo js_escape($GLOBALS['enable_group_therapy']); ?>
 
+        var WindowTitleAddPatient = <?php echo ($GLOBALS['window_title_add_patient_name'] ? 'true' : 'false' ); ?>;
+        var WindowTitleBase = <?php echo js_escape($openemr_name); ?>;
+        const isSms = "<?php echo !empty($GLOBALS['oefax_enable_sms'] ?? null); ?>";
+        const isFax = "<?php echo !empty($GLOBALS['oefax_enable_fax']) ?? null?>";
+        const isServicesOther = (isSms || isFax);
         function goRepeaterServices() {
             // Ensure send the skip_timeout_reset parameter to not count this as a manual entry in the
             // timing out mechanism in OpenEMR.
@@ -89,10 +103,14 @@ $esignApi = new Api();
             // Send the skip_timeout_reset parameter to not count this as a manual entry in the
             // timing out mechanism in OpenEMR. Notify App for various portal and reminder alerts.
             // Combined portal and reminders ajax to fetch sjp 06-07-2020.
+            // Incorporated timeout mechanism in 2021
             restoreSession();
             let request = new FormData;
             request.append("skip_timeout_reset", "1");
             request.append("isPortal", isPortalEnabled);
+            request.append("isServicesOther", isServicesOther);
+            request.append("isSms", isSms);
+            request.append("isFax", isFax);
             request.append("csrf_token_form", csrf_token_js);
             fetch(webroot_url + "/library/ajax/dated_reminders_counter.php", {
                 method: 'POST',
@@ -105,6 +123,10 @@ $esignApi = new Api();
                 }
                 return response.json();
             }).then((data) => {
+                if (data.timeoutMessage && (data.timeoutMessage == 'timeout')) {
+                    // timeout has happened, so logout
+                    timeoutLogout();
+                }
                 if (isPortalEnabled) {
                     let mail = data.mailCnt;
                     let chats = data.chatCnt;
@@ -123,6 +145,19 @@ $esignApi = new Api();
                         app_view_model.application_data.user().portalPayments(payments);
                     }
                 }
+                if (isServicesOther) {
+                    let sms = data.smsCnt;
+                    let fax = data.faxCnt;
+                    let total = data.serviceTotal;
+                    let enable = ((1 * sms) + (1 * fax));
+                    // Will turn off button display if no notification!
+                    app_view_model.application_data.user().servicesOther(enable);
+                    if (enable > 0) {
+                        app_view_model.application_data.user().serviceAlerts(total);
+                        app_view_model.application_data.user().smsAlerts(sms);
+                        app_view_model.application_data.user().faxAlerts(fax);
+                    }
+                }
                 // Always send reminder count text to model
                 app_view_model.application_data.user().messages(data.reminderText);
             }).catch(function(error) {
@@ -130,22 +165,26 @@ $esignApi = new Api();
             });
 
             // run background-services
-            restoreSession();
-            request = new FormData;
-            request.append("skip_timeout_reset", "1");
-            request.append("ajax", "1");
-            request.append("csrf_token_form", csrf_token_js);
-            fetch(webroot_url + "/library/ajax/execute_background_services.php", {
-                method: 'POST',
-                credentials: 'same-origin',
-                body: request
-            }).then((response) => {
-                if (response.status !== 200) {
-                    console.log('Background Service start failed. Status Code: ' + response.status);
-                }
-            }).catch(function(error) {
-                console.log('HTML Background Service start Request failed: ', error);
-            });
+            // delay 10 seconds to prevent both utility trigger at close to same time.
+            // Both call globals so that is my concern.
+            setTimeout(function() {
+                restoreSession();
+                request = new FormData;
+                request.append("skip_timeout_reset", "1");
+                request.append("ajax", "1");
+                request.append("csrf_token_form", csrf_token_js);
+                fetch(webroot_url + "/library/ajax/execute_background_services.php", {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    body: request
+                }).then((response) => {
+                    if (response.status !== 200) {
+                        console.log('Background Service start failed. Status Code: ' + response.status);
+                    }
+                }).catch(function(error) {
+                    console.log('HTML Background Service start Request failed: ', error);
+                });
+            }, 10000);
 
             // auto run this function every 60 seconds
             var repeater = setTimeout("goRepeaterServices()", 60000);
@@ -153,39 +192,47 @@ $esignApi = new Api();
 
         function isEncounterLocked(encounterId) {
             <?php if ($esignApi->lockEncounters()) { ?>
-            // If encounter locking is enabled, make a syncronous call (async=false) to check the
-            // DB to see if the encounter is locked.
-            // Call restore session, just in case
-            // @TODO next clean up pass, turn into await promise then modify tabs_view_model.js L-309
-            restoreSession();
-            let url = webroot_url + "/interface/esign/index.php?module=encounter&method=esign_is_encounter_locked";
-            $.ajax({
-                type: 'POST',
-                url: url,
-                data: {encounterId: encounterId},
-                success: function (data) {
-                    encounter_locked = data;
-                },
-                dataType: 'json',
-                async: false
-            });
-            return encounter_locked;
+                // If encounter locking is enabled, make a syncronous call (async=false) to check the
+                // DB to see if the encounter is locked.
+                // Call restore session, just in case
+                // @TODO next clean up pass, turn into await promise then modify tabs_view_model.js L-309
+                restoreSession();
+                let url = webroot_url + "/interface/esign/index.php?module=encounter&method=esign_is_encounter_locked";
+                $.ajax({
+                    type: 'POST',
+                    url: url,
+                    data: {
+                        encounterId: encounterId
+                    },
+                    success: function(data) {
+                        encounter_locked = data;
+                    },
+                    dataType: 'json',
+                    async: false
+                });
+                return encounter_locked;
             <?php } else { ?>
-            // If encounter locking isn't enabled then always return false
-            return false;
+                // If encounter locking isn't enabled then always return false
+                return false;
             <?php } ?>
         }
     </script>
 
-    <?php Header::setupHeader(['knockout', 'tabs-theme', 'i18next']); ?>
+    <?php Header::setupHeader(['knockout', 'tabs-theme', 'i18next', 'hotkeys']); ?>
     <script>
         // set up global translations for js
         function setupI18n(lang_id) {
             restoreSession();
-            return fetch(<?php echo js_escape($GLOBALS['webroot'])?> +"/library/ajax/i18n_generator.php?lang_id=" + encodeURIComponent(lang_id) + "&csrf_token_form=" + encodeURIComponent(csrf_token_js), {
+            return fetch(<?php echo js_escape($GLOBALS['webroot']) ?> + "/library/ajax/i18n_generator.php?lang_id=" + encodeURIComponent(lang_id) + "&csrf_token_form=" + encodeURIComponent(csrf_token_js), {
                 credentials: 'same-origin',
                 method: 'GET'
-            }).then(response => response.json())
+            }).then((response) => {
+                if (response.status !== 200) {
+                    console.log('I18n setup failed. Status Code: ' + response.status);
+                    return [];
+                }
+                return response.json();
+            })
         }
         setupI18n(<?php echo js_escape($_SESSION['language_choice']); ?>).then(translationsJson => {
             i18next.init({
@@ -202,6 +249,19 @@ $esignApi = new Api();
         }).catch(error => {
             console.log(error.message);
         });
+
+        /**
+         * Assign and persist documents to portal patients
+         * @var int patientId pid
+         */
+        function assignPatientDocuments(patientId) {
+            let url = top.webroot_url + '/portal/import_template_ui.php?from_demo_pid=' + encodeURIComponent(patientId);
+            dlgopen(url, 'pop-assignments', 'modal-lg', 850, '', '', {
+                allowDrag: true,
+                allowResize: true,
+                sizeHeight: 'full',
+            });
+        }
     </script>
 
     <script src="js/custom_bindings.js?v=<?php echo $v_js_includes; ?>"></script>
@@ -212,6 +272,7 @@ $esignApi = new Api();
     <script src="js/application_view_model.js?v=<?php echo $v_js_includes; ?>"></script>
     <script src="js/frame_proxies.js?v=<?php echo $v_js_includes; ?>"></script>
     <script src="js/dialog_utils.js?v=<?php echo $v_js_includes; ?>"></script>
+    <script src="js/shortcuts.js?v=<?php echo $v_js_includes; ?>"></script>
 
     <?php
     // Below code block is to prepare certain elements for deciding what links to show on the menu
@@ -242,33 +303,52 @@ $esignApi = new Api();
     <?php $userQuery = sqlQuery("select * from users where username = ?", array($_SESSION['authUser'])); ?>
 
     <script>
-        <?php if (!empty($_SESSION['frame1url']) && !empty($_SESSION['frame1target'])) { ?>
-        // Use session variables and tabStatus object to set up initial/default first tab
-        app_view_model.application_data.tabs.tabsList.push(new tabStatus(<?php echo xlj("Loading"); ?> +"...",<?php echo json_encode("../" . $_SESSION['frame1url']); ?>,<?php echo json_encode($_SESSION['frame1target']); ?>,<?php echo xlj("Loading"); ?> +" " + <?php echo json_encode($_SESSION['frame1label']); ?>, true, true, false));
-        <?php } ?>
-
-        <?php if (!empty($_SESSION['frame2url']) && !empty($_SESSION['frame2target'])) { ?>
-        // Use session variables and tabStatus object to set up initial/default second tab, if none is set in globals, this tab will not be displayed initially
-        app_view_model.application_data.tabs.tabsList.push(new tabStatus(<?php echo xlj("Loading"); ?> +"...",<?php echo json_encode("../" . $_SESSION['frame2url']); ?>,<?php echo json_encode($_SESSION['frame2target']); ?>,<?php echo xlj("Loading"); ?> +" " + <?php echo json_encode($_SESSION['frame2label']); ?>, true, false, false));
-        <?php } ?>
+        <?php
+        if ($_SESSION['default_open_tabs']) :
+            // For now, only the first tab is visible, this could be improved upon by further customizing the list options in a future feature request
+            $visible = "true";
+            foreach ($_SESSION['default_open_tabs'] as $i => $tab) :
+                $_unsafe_url = preg_replace('/(\?.*)/m', '', Path::canonicalize($fileroot . DIRECTORY_SEPARATOR . $tab['notes']));
+                if (realpath($_unsafe_url) === false || strpos($_unsafe_url, $fileroot) !== 0) {
+                    unset($_SESSION['default_open_tabs'][$i]);
+                    continue;
+                }
+                $url = json_encode($webroot . "/" . $tab['notes']);
+                $target = json_encode($tab['option_id']);
+                $label = json_encode(xl("Loading") . " " . $tab['title']);
+                $loading = xlj("Loading");
+                echo "app_view_model.application_data.tabs.tabsList.push(new tabStatus($label, $url, $target, $loading, true, $visible, false));\n";
+                $visible = "false";
+            endforeach;
+        endif;
+        ?>
 
         app_view_model.application_data.user(new user_data_view_model(<?php echo json_encode($_SESSION["authUser"])
-            . ',' . json_encode($userQuery['fname'])
-            . ',' . json_encode($userQuery['lname'])
-            . ',' . json_encode($_SESSION['authProvider']); ?>));
-
+                                                                            . ',' . json_encode($userQuery['fname'])
+                                                                            . ',' . json_encode($userQuery['lname'])
+                                                                            . ',' . json_encode($_SESSION['authProvider']); ?>));
     </script>
-<style>
-    html, body {
-        width: max-content;
-        min-height: 100% !important;
-        height: 100% !important;
-    }
-</style>
+    <style>
+        html,
+        body {
+            width: max-content;
+            min-height: 100% !important;
+            height: 100% !important;
+        }
+    </style>
 </head>
+
 <body class="min-vw-100">
-    <!-- Below iframe is to support auto logout when timeout is reached -->
-    <iframe name="timeout" style="visibility:hidden; position:absolute; left:0; top:0; height:0; width:0; border:none;" src="timeout_iframe.php"></iframe>
+<?php
+    // fire off an event here
+if (!empty($GLOBALS['kernel']->getEventDispatcher())) {
+    /**
+     * @var \Symfony\Component\EventDispatcher\EventDispatcher
+     */
+    $dispatcher = $GLOBALS['kernel']->getEventDispatcher();
+    $dispatcher->dispatch(new RenderEvent(), RenderEvent::EVENT_BODY_RENDER_PRE);
+}
+?>
     <!-- Below iframe is to support logout, which needs to be run in an inner iframe to work as intended -->
     <iframe name="logoutinnerframe" id="logoutinnerframe" style="visibility:hidden; position:absolute; left:0; top:0; height:0; width:0; border:none;" src="about:blank"></iframe>
     <?php // mdsupport - app settings
@@ -285,22 +365,29 @@ $esignApi = new Api();
         }
     }
     ?>
-    <div id="mainBox" <?php echo $disp_mainBox ?> >
+    <div id="mainBox" <?php echo $disp_mainBox ?>>
         <nav class="navbar navbar-expand-xl navbar-light bg-light py-0">
-            <a class="navbar-brand mt-2 mt-xl-0 mr-3 mr-xl-2" href="https://www.open-emr.org" title="OpenEMR <?php echo xla("Website"); ?>" rel="noopener" target="_blank">
-                <?php echo file_get_contents($GLOBALS['images_static_absolute'] . "/menu-logo.svg"); ?>
-            </a>
+            <?php if ($GLOBALS['display_main_menu_logo'] === '1') : ?>
+                <a class="navbar-brand" href="https://www.open-emr.org" title="OpenEMR <?php echo xla("Website"); ?>" rel="noopener" target="_blank">
+                    <img src="<?php echo $menuLogo;?>" class="d-inline-block align-middle" height="16" alt="<?php echo xlt('Main Menu Logo');?>">
+                </a>
+            <?php endif; ?>
             <button class="navbar-toggler mr-auto" type="button" data-toggle="collapse" data-target="#mainMenu" aria-controls="mainMenu" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="mainMenu" data-bind="template: {name: 'menu-template', data: application_data}"></div>
+            <form name="frm_search_globals" class="form-inline">
+                <div class="input-group">
+                    <input type="text" id="anySearchBox" class="form-control-sm <?php echo $any_search_class ?> form-control" name="anySearchBox" placeholder="<?php echo xla("Search by any demographics") ?>" autocomplete="off">
+                    <div class="input-group-append">
+                        <button type="button" id="search_globals" class="btn btn-sm btn-secondary <?php echo $search_globals_class ?>" title='<?php echo xla("Search for patient by entering whole or part of any demographics field information"); ?>' data-bind="event: {mousedown: viewPtFinder.bind( $data, '<?php echo xla("The search field cannot be empty. Please enter a search term") ?>', '<?php echo attr($search_any_type); ?>')}"><i class="fa fa-search">&nbsp;</i></button>
+                    </div>
+                </div>
+            </form>
             <span id="userData" data-bind="template: {name: 'user-data-template', data: application_data}"></span>
         </nav>
-            <div id="attendantData" class="body_title acck" data-bind="template: {name: app_view_model.attendant_template_type, data: application_data}">
-            </div>
-
+        <div id="attendantData" class="body_title acck" data-bind="template: {name: app_view_model.attendant_template_type, data: application_data}"></div>
         <div class="body_title" id="tabs_div" data-bind="template: {name: 'tabs-controls', data: application_data}"></div>
-
         <div class="mainFrames d-flex flex-row" id="mainFrames_div">
             <div id="framesDisplay" data-bind="template: {name: 'tabs-frames', data: application_data}"></div>
         </div>
@@ -308,30 +395,44 @@ $esignApi = new Api();
     <script>
         ko.applyBindings(app_view_model);
 
-        $(function () {
+        $(function() {
             $('.dropdown-toggle').dropdown();
-            goRepeaterServices();
-            $('#patient_caret').click(function () {
+            $('#patient_caret').click(function() {
                 $('#attendantData').slideToggle();
                 $('#patient_caret').toggleClass('fa-caret-down').toggleClass('fa-caret-up');
             });
-            if($('body').css('direction') == "rtl") {
-              $('.dropdown-menu-right').each(function() {
-                $(this).removeClass('dropdown-menu-right');
-              });
+            if ($('body').css('direction') == "rtl") {
+                $('.dropdown-menu-right').each(function() {
+                    $(this).removeClass('dropdown-menu-right');
+                });
             }
-
         });
-        $(function () {
+        $(function() {
             $('#logo_menu').focus();
         });
-        $('#anySearchBox').keypress(function (event) {
+        $('#anySearchBox').keypress(function(event) {
             if (event.which === 13 || event.keyCode === 13) {
                 event.preventDefault();
                 $('#search_globals').mousedown();
             }
         });
         document.addEventListener('touchstart', {}); //specifically added for iOS devices, especially in iframes
+        <?php if (($_ENV['OPENEMR__NO_BACKGROUND_TASKS'] ?? 'false') !== 'true') { ?>
+            $(function () {
+                goRepeaterServices();
+            });
+        <?php } ?>
     </script>
+    <?php
+    // fire off an event here
+    if (!empty($GLOBALS['kernel']->getEventDispatcher())) {
+        /**
+         * @var \Symfony\Component\EventDispatcher\EventDispatcher
+         */
+        $dispatcher = $GLOBALS['kernel']->getEventDispatcher();
+        $dispatcher->dispatch(new RenderEvent(), RenderEvent::EVENT_BODY_RENDER_POST);
+    }
+    ?>
 </body>
+
 </html>

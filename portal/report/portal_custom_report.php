@@ -32,16 +32,16 @@ if (isset($_SESSION['pid']) && isset($_SESSION['patient_portal_onsite_two'])) {
     exit;
 }
 
-$ignoreAuth = true;
-global $ignoreAuth;
+$ignoreAuth_onsite_portal = true;
+global $ignoreAuth_onsite_portal;
 
 require_once('../../interface/globals.php');
-require_once("$srcdir/forms.inc");
-require_once("$srcdir/pnotes.inc");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/forms.inc.php");
+require_once("$srcdir/pnotes.inc.php");
+require_once("$srcdir/patient.inc.php");
 require_once("$srcdir/options.inc.php");
-require_once("$srcdir/lists.inc");
-require_once("$srcdir/report.inc");
+require_once("$srcdir/lists.inc.php");
+require_once("$srcdir/report.inc.php");
 require_once("$srcdir/classes/Document.class.php");
 require_once("$srcdir/classes/Note.class.php");
 require_once(dirname(__file__) . "/../../custom/code_types.inc.php");
@@ -51,6 +51,7 @@ require_once($GLOBALS['fileroot'] . "/controllers/C_Document.class.php");
 
 use ESign\Api;
 use Mpdf\Mpdf;
+use OpenEMR\Pdf\Config_Mpdf;
 
 $staged_docs = array();
 $archive_name = '';
@@ -61,24 +62,7 @@ $GLOBALS['PATIENT_REPORT_ACTIVE'] = true;
 $PDF_OUTPUT = empty($_POST['pdf']) ? 0 : intval($_POST['pdf']);
 
 if ($PDF_OUTPUT) {
-    $config_mpdf = array(
-        'tempDir' => $GLOBALS['MPDF_WRITE_DIR'],
-        'mode' => $GLOBALS['pdf_language'],
-        'format' => $GLOBALS['pdf_size'],
-        'default_font_size' => '9',
-        'default_font' => 'dejavusans',
-        'margin_left' => $GLOBALS['pdf_left_margin'],
-        'margin_right' => $GLOBALS['pdf_right_margin'],
-        'margin_top' => $GLOBALS['pdf_top_margin'],
-        'margin_bottom' => $GLOBALS['pdf_bottom_margin'],
-        'margin_header' => '',
-        'margin_footer' => '',
-        'orientation' => $GLOBALS['pdf_layout'],
-        'shrink_tables_to_fit' => 1,
-        'use_kwt' => true,
-        'autoScriptToLang' => true,
-        'keep_table_proportions' => true
-    );
+    $config_mpdf = Config_Mpdf::getConfigMpdf();
     $pdf = new mPDF($config_mpdf);
     if ($_SESSION['language_direction'] == 'rtl') {
         $pdf->SetDirectionality('rtl');
@@ -111,27 +95,7 @@ $first_issue = 1;
 
 function getContent()
 {
-    global $web_root, $webserver_root;
     $content = ob_get_clean();
-    // Fix a nasty html2pdf bug - it ignores document root!
-    // TODO - now use mPDF, so should test if still need this fix
-    $i = 0;
-    $wrlen = strlen($web_root);
-    $wsrlen = strlen($webserver_root);
-    while (true) {
-        $i = stripos($content, " src='/", $i + 1);
-        if ($i === false) {
-            break;
-        }
-
-        if (
-            substr($content, $i + 6, $wrlen) === $web_root &&
-            substr($content, $i + 6, $wsrlen) !== $webserver_root
-        ) {
-            $content = substr($content, 0, $i + 6) . $webserver_root . substr($content, $i + 6 + $wrlen);
-        }
-    }
-
     return $content;
 }
 
@@ -570,11 +534,12 @@ if ($printable) {
     echo '<page_header style="text-align:right;"> ' . xlt("PATIENT") . ':' . text($titleres['lname']) . ', ' . text($titleres['fname']) . ' - ' . text($titleres['DOB_TS']) . '</page_header>    ';
     echo '<page_footer style="text-align:right;">' . xlt('Generated on') . ' ' . text(oeFormatShortDate()) . ' - ' . text($facility['name']) . ' ' . text($facility['phone']) . '</page_footer>';
 
-    // Use logo if it exists as 'practice_logo.gif' in the site dir
-    // old code used the global custom dir which is no longer a valid
-    $practice_logo = "$OE_SITE_DIR/images/practice_logo.gif";
-    if (file_exists($practice_logo)) {
-        echo "<img src='$practice_logo' align='left'><br />\n";
+    $practice_logo = "";
+    $plogo = glob("$OE_SITE_DIR/images/*");// let's give the user a little say in image format.
+    $plogo = preg_grep('~practice_logo\.(gif|png|jpg|jpeg)$~i', $plogo);
+    if (!empty($plogo)) {
+        $k = current(array_keys($plogo));
+        $practice_logo = $plogo[$k];
     }
     ?>
     <h2><?php echo text($facility['name']); ?></h2>
@@ -796,6 +761,9 @@ foreach ($ar as $key => $val) {
                 $d = new Document($document_id);
                 $fname = basename($d->get_name());
                 $extension = substr($fname, strrpos($fname, "."));
+                if (strtolower($extension) == '.zip' || strtolower($extension) == '.dcm') {
+                    continue;
+                }
                 echo "<h1>" . xlt('Document') . " '" . text($fname) . "-" . text($d->get_id()) . "'</h1>";
 
                 $notes = $d->get_notes();

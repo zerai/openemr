@@ -101,7 +101,7 @@ if ($payment_id > 0) {
         $res = sqlStatement("SELECT insurance_companies.name FROM insurance_companies
             where insurance_companies.id =?", array($InsuranceCompanyId));
         $row = sqlFetchArray($res);
-        $div_after_save = $row['name'];
+        $div_after_save = $row['name'] ?? '';
         $TypeCode = $InsuranceCompanyId;
         if ($PaymentType == '') {
             $PaymentType = 'insurance';
@@ -252,7 +252,7 @@ if (($screen == 'new_payment' && $payment_id * 1 == 0) || ($screen == 'edit_paym
             <div class="input-group">
                 <button class="input-group-prepend btn btn-secondary btn-delete" onclick="getElementById('GlobalReset').value='-0.00';this.classList.remove('btn-delete');event.target.classList.add('fa', 'fa-ban');">
                 </button>
-                <input id="GlobalReset" name="global_reset" class="form-control" value="<?php echo ($global_amount * 1 === 0) ? attr("0.00") : attr(number_format($global_amount, 2, '.', ',')); ?>" readonly />
+                <input id="GlobalReset" name="global_reset" class="form-control" value="<?php echo (($global_amount ?? null) * 1 === 0) ? attr("0.00") : attr(number_format(($global_amount ?? null), 2, '.', ',')); ?>" readonly />
             </div>
         </div>
         <div class="forms col-2">
@@ -269,7 +269,7 @@ if (($screen == 'new_payment' && $payment_id * 1 == 0) || ($screen == 'edit_paym
                 <div class="col-sm-12 text-left position-override">
                     <div class="btn-group" role="group">
                         <button onClick="return SavePayment();" class="btn btn-primary btn-save"><?php echo xlt('Save Changes'); ?></button>
-                        <button class="btn btn-primary btn-save" onClick="OpenEOBEntry();"><?php echo xlt('Allocate'); ?></button>
+                        <button class="btn btn-primary btn-save" onClick="return OpenEOBEntry();"><?php echo xlt('Allocate'); ?></button>
                         <button onclick="ResetForm(); return false;" class="btn btn-secondary btn-cancel"><?php echo xlt('Cancel Changes'); ?></button>
                         <br />
                     </div>

@@ -6,7 +6,7 @@
  * @author    Brady Miller <brady.g.miller@gmail.com>
  * @author    Jerry Padgett <sjpadgett@gmail.com>
  * @copyright Copyright (c) 2019 Brady Miller <brady.g.miller@gmail.com>
- * @copyright Copyright (c) 2019-2020 Jerry Padgett <sjpadgett@gmail.com>
+ * @copyright Copyright (c) 2019-2021 Jerry Padgett <sjpadgett@gmail.com>
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 /* We should really try to keep this library jQuery free ie javaScript only! */
@@ -26,30 +26,33 @@ function xl(string) {
 // html escaping functions - special case when sending js string to html (see codebase for examples)
 //   jsText (equivalent to text() )
 //   jsAttr (equivalent to attr() )
-var htmlEscapesText = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;'
-};
-var htmlEscapesAttr = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#x27;'
-};
-var htmlEscaperText = /[&<>]/g;
-var htmlEscaperAttr = /[&<>"']/g;
-jsText = function(string) {
-    return ('' + string).replace(htmlEscaperText, function(match) {
-        return htmlEscapesText[match];
-    });
-};
-jsAttr = function(string) {
-    return ('' + string).replace(htmlEscaperAttr, function(match) {
-        return htmlEscapesAttr[match];
-    });
-};
+// must be careful assigning const in this script. can't reinit a constant
+if (typeof htmlEscapesText === 'undefined') {
+    const htmlEscapesText = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;'
+    };
+    const htmlEscapesAttr = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#x27;'
+    };
+    const htmlEscaperText = /[&<>]/g;
+    const htmlEscaperAttr = /[&<>"']/g;
+    jsText = function (string) {
+        return ('' + string).replace(htmlEscaperText, function (match) {
+            return htmlEscapesText[match];
+        });
+    };
+    jsAttr = function (string) {
+        return ('' + string).replace(htmlEscaperAttr, function (match) {
+            return htmlEscapesAttr[match];
+        });
+    };
+}
 
 // another useful function
 async function syncFetchFile(fileUrl, type = 'text') {
@@ -76,7 +79,7 @@ async function syncFetchFile(fileUrl, type = 'text') {
 * */
 function includeScript(srcUrl, type) {
     return new Promise(function (resolve, reject) {
-        if (type == 'script') {
+        if (type === 'script') {
             let newScriptElement = document.createElement('script');
             newScriptElement.src = srcUrl;
             newScriptElement.onload = () => resolve(newScriptElement);
@@ -100,20 +103,6 @@ function includeScript(srcUrl, type) {
 }
 
 /*
-*  This is where we want to decide what we need for the instance
-*  We only want to load any needed dependencies.
-*
-*/
-document.addEventListener('DOMContentLoaded', function () {
-    let isNeeded = document.querySelectorAll('.drag-action').length;
-    let isNeededResize = document.querySelectorAll('.resize-action').length;
-    if (isNeeded || isNeededResize) {
-        initDragResize();
-    }
-
-}, false);
-
-/*
 * @function initDragResize(dragContext, resizeContext)
 * @summary call this function from scripts you may want to provide a different
 *  context other than the page context of this utility
@@ -126,8 +115,7 @@ function initDragResize(dragContext, resizeContext = document) {
     if (isLoaded !== 'function') {
         (async (utilfn) => {
             await includeScript(utilfn, 'script');
-        })(top.webroot_url + '/public/assets/interactjs/dist/interact.js')
-        .then(() => {
+        })(top.webroot_url + '/public/assets/interactjs/dist/interact.js').then(() => {
             initInteractors(dragContext, resizeContext);
         });
     } else {
@@ -135,9 +123,31 @@ function initDragResize(dragContext, resizeContext = document) {
     }
 }
 
-/* function to init all page drag/resize elements.*/
+function setInteractorPosition(x, y, target) {
+    if ('webkitTransform' in target.style || 'transform' in target.style) {
+        target.style.webkitTransform =
+            target.style.transform =
+                'translate(' + x + 'px, ' + y + 'px)';
+    } else {
+        target.style.left = x + 'px';
+        target.style.top = y + 'px';
+    }
+
+    target.setAttribute('data-x', x);
+    target.setAttribute('data-y', y);
+}
+
+/* function to init all page drag/resize elements. */
 function initInteractors(dragContext = document, resizeContext = '') {
     resizeContext = resizeContext ? resizeContext : dragContext;
+
+    function dragMoveListener(event) {
+        let target = event.target;
+        let x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+        let y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+
+        setInteractorPosition(x, y, target);
+    }
 
     /* Draggable */
     // reset
@@ -204,28 +214,13 @@ function initInteractors(dragContext = document, resizeContext = '') {
         x += event.deltaRect.left;
         y += event.deltaRect.top;
 
+        // TODO: @adunsulag not sure why this only does webkitTransform, seems like it should do the same
+        // as our other move here: setInteractorPosition(x, y, target);
         target.style.webkitTransform = target.style.transform = 'translate(' + x + 'px,' + y + 'px)';
         target.setAttribute('data-x', x);
         target.setAttribute('data-y', y);
     });
 
-    function dragMoveListener(event) {
-        let target = event.target;
-        let x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
-        let y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
-
-        if ('webkitTransform' in target.style || 'transform' in target.style) {
-            target.style.webkitTransform =
-                target.style.transform =
-                    'translate(' + x + 'px, ' + y + 'px)';
-        } else {
-            target.style.left = x + 'px';
-            target.style.top = y + 'px';
-        }
-
-        target.setAttribute('data-x', x);
-        target.setAttribute('data-y', y);
-    }
 }
 
 /*
@@ -244,32 +239,35 @@ function oeSortable(callBackFn) {
     } else {
         load();
     }
-    function clearTranslate(elem){
+
+    function clearTranslate(elem) {
         elem.style.webkitTransform =
             elem.style.transform =
-            'translate(' + 0 + 'px, ' + 0 + 'px)'
+                'translate(' + 0 + 'px, ' + 0 + 'px)'
         elem.setAttribute('data-x', 0)
         elem.setAttribute('data-y', 0)
     }
-    function switchElem(elem1, elem2, clear = false){
+
+    function switchElem(elem1, elem2, clear = false) {
         $(elem2).append($(elem1).children()[0]);
         $(elem1).append($(elem2).children()[0]);
-        if(clear){
-             clearTranslate($(elem2).children()[0]);
-             clearTranslate($(elem1).children()[0]);
+        if (clear) {
+            clearTranslate($(elem2).children()[0]);
+            clearTranslate($(elem1).children()[0]);
         }
     }
-    function moveUp(elem){
-        if(elem){
+
+    function moveUp(elem) {
+        if (elem) {
             let prevElem = $(elem).prev(".droppable");
-            if(prevElem.length > 0){
+            if (prevElem.length > 0) {
                 let childIsDragging = prevElem.children("li.is-dragging")[0];
-                if(childIsDragging){
+                if (childIsDragging) {
                     switchElem(elem, prevElem[0], true);
                     return true;
-                }else{
-                    if(prevElem[0]){
-                        if(moveUp(prevElem[0])){
+                } else {
+                    if (prevElem[0]) {
+                        if (moveUp(prevElem[0])) {
                             switchElem(elem, prevElem[0]);
                         }
                     }
@@ -278,17 +276,18 @@ function oeSortable(callBackFn) {
         }
         return false;
     }
-    function moveDown(elem){
-        if(elem){
+
+    function moveDown(elem) {
+        if (elem) {
             let nxtElem = $(elem).next(".droppable");
-            if(nxtElem.length > 0){
+            if (nxtElem.length > 0) {
                 let childIsDragging = nxtElem.children("li.is-dragging")[0];
-                if(childIsDragging){
+                if (childIsDragging) {
                     switchElem(elem, nxtElem[0], true);
                     return true;
-                }else{
-                    if(nxtElem[0]){
-                        if(moveDown(nxtElem[0])){
+                } else {
+                    if (nxtElem[0]) {
+                        if (moveDown(nxtElem[0])) {
                             switchElem(elem, nxtElem[0]);
                         }
                     }
@@ -297,17 +296,19 @@ function oeSortable(callBackFn) {
         }
         return false;
     }
-    function dragMoveListener (event) {
+
+    function dragMoveListener(event) {
         var target = event.target
         var x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx
         var y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy
         target.style.webkitTransform =
             target.style.transform =
-            'translate(' + x + 'px, ' + y + 'px)'
+                'translate(' + x + 'px, ' + y + 'px)'
         target.setAttribute('data-x', x)
         target.setAttribute('data-y', y)
     }
-    function load(){
+
+    function load() {
         interact('.droppable').dropzone({
             accept: null,
             overlap: 0.9,
@@ -316,12 +317,12 @@ function oeSortable(callBackFn) {
             },
             ondragenter: function (event) {
                 let isUpper = moveUp(event.target);
-                if(!isUpper){
+                if (!isUpper) {
                     moveDown(event.target);
                 }
             },
             ondropdeactivate: function (event) {
-                if(event.target.firstChild.classList.contains('is-dragging')){
+                if (event.target.firstChild.classList.contains('is-dragging')) {
                     let items = event.target.parentNode.children;
                     event.relatedTarget.classList.remove('is-dragging');
                     clearTranslate(event.relatedTarget);
@@ -330,21 +331,19 @@ function oeSortable(callBackFn) {
             }
         })
 
-        interact('.draggable')
-            .draggable({
-                inertia: true,
-                modifiers: [
+        interact('.draggable').draggable({
+            inertia: true,
+            modifiers: [
                 interact.modifiers.restrictRect({
                     restriction: null,
                     endOnly: true
                 })
-                ],
-                autoScroll: true,
-                listeners: { move: dragMoveListener }
+            ],
+            autoScroll: true,
+            listeners: {move: dragMoveListener}
         })
     }
-
-};
+}
 
 
 /*
@@ -353,6 +352,7 @@ function oeSortable(callBackFn) {
 *
 */
 if (typeof asyncAlertMsg !== "function") {
+    /* eslint-disable-next-line no-inner-declarations */
     function asyncAlertMsg(message, timer = 5000, type = 'danger', size = '') {
         let alertMsg = xl("Alert Notice");
         $('#alert_box').remove();
@@ -449,25 +449,57 @@ if (typeof top.userDebug !== 'undefined' && (top.userDebug === '1' || top.userDe
 
             return false;
         };
+        try {
+            let string = msg.toLowerCase();
+            let substring = xl("script error"); // translate to catch for language of browser.
+            if (string.indexOf(substring) > -1) {
+                let xlated = xl('Script Error: See Browser Console for Detail');
+                showDebugAlert(xlated);
+            } else {
+                let message = {
+                    Message: msg,
+                    URL: url,
+                    Line: lineNo,
+                    Column: columnNo,
+                    Error: JSON.stringify(error)
+                };
 
-        let string = msg.toLowerCase();
-        let substring = xl("script error"); // translate to catch for language of browser.
-        if (string.indexOf(substring) > -1) {
-            let xlated = xl('Script Error: See Browser Console for Detail');
+                showDebugAlert(message);
+            }
+        } catch (e) {
+            let xlated = xl('Unknown Script Error: See Browser Console for Detail');
             showDebugAlert(xlated);
-        } else {
-            let message = {
-                Message: msg,
-                URL: url,
-                Line: lineNo,
-                Column: columnNo,
-                Error: JSON.stringify(error)
-            };
-
-            showDebugAlert(message);
         }
 
         return false;
     };
 }
+
+(function(window, oeSMART) {
+    oeSMART.initLaunch = function(webroot, csrfToken) {
+        // allows this to be lazy defined
+        let xl = window.top.xl || function(text) { return text; };
+        let smartLaunchers = document.querySelectorAll('.smart-launch-btn');
+        for (let launch of smartLaunchers) {
+                launch.addEventListener('click', function (evt) {
+                    let node = evt.target;
+                    let intent = node.dataset.intent;
+                    let clientId = node.dataset.clientId;
+                    if (!intent || !clientId) {
+                        console.error("mising intent parameter or client-id parameter");
+                        return;
+                    }
+
+                    let url = webroot + '/interface/smart/ehr-launch-client.php?intent='
+                        + encodeURIComponent(intent) + '&client_id=' + encodeURIComponent(clientId)
+                        + "&csrf_token=" + encodeURIComponent(csrfToken);
+                    let title = node.dataset.smartName || JSON.stringify(xl("Smart App"));
+                    // we allow external dialog's  here because that is what a SMART app is
+                    let height = window.top.innerHeight; // do our full height here
+                    dlgopen(url, '_blank', 'modal-full', height, '', title, {allowExternal: true});
+                });
+        }
+    };
+    window.oeSMART = oeSMART;
+})(window, window.top.oeSMART || {});
 

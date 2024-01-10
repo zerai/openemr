@@ -19,7 +19,6 @@
  */
 abstract class BaseController
 {
-
     public $viewBean;
     public $ruleManager;
     public $codeManager;
@@ -91,7 +90,7 @@ abstract class BaseController
 
     public function addHelper($helper)
     {
-        if (is_null($this->viewBean->helpers)) {
+        if (is_null($this->viewBean->helpers ?? null)) {
             $this->viewBean->helpers = array();
         }
 

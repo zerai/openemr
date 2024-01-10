@@ -14,26 +14,27 @@
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
-require_once($GLOBALS['fileroot'] . "/library/registry.inc");
+require_once($GLOBALS['fileroot'] . "/library/registry.inc.php");
 require_once($GLOBALS['fileroot'] . "/library/amc.php");
 
 use OpenEMR\Common\Csrf\CsrfUtils;
 use OpenEMR\Common\Http\oeHttp;
+use OpenEMR\Rx\RxList;
 use PHPMailer\PHPMailer\PHPMailer;
 
 class C_Prescription extends Controller
 {
-
     var $template_mod;
     var $pconfig;
     var $providerid = 0;
     var $is_faxing = false;
     var $is_print_to_fax = false;
+    var $RxList;
+    var $prescriptions;
 
     function __construct($template_mod = "general")
     {
         parent::__construct();
-
         $this->template_mod = $template_mod;
         $this->assign("FORM_ACTION", $GLOBALS['webroot'] . "/controller.php?" . attr($_SERVER['QUERY_STRING']));
         $this->assign("TOP_ACTION", $GLOBALS['webroot'] . "/controller.php?" . "prescription" . "&");
@@ -42,7 +43,11 @@ class C_Prescription extends Controller
         $this->assign("SIMPLIFIED_PRESCRIPTIONS", $GLOBALS['simplified_prescriptions']);
         $this->pconfig = $GLOBALS['oer_config']['prescriptions'];
         $this->RxList = new RxList();
-
+        // test if rxnorm available for lookups.
+        $rxn = sqlQuery("SELECT table_name FROM information_schema.tables WHERE table_name = 'RXNCONSO' OR table_name = 'rxconso'");
+        $rxcui = sqlQuery("SELECT ct_id FROM `code_types` WHERE `ct_key` = ? AND `ct_active` = 1", array('RXCUI'));
+        $this->assign("RXNORMS_AVAILABLE", !empty($rxn));
+        $this->assign("RXCUI_AVAILABLE", !empty($rxcui));
         // Assign the CSRF_TOKEN_FORM
         $this->assign("CSRF_TOKEN_FORM", CsrfUtils::collectCsrfToken());
 
@@ -104,7 +109,7 @@ class C_Prescription extends Controller
 
         if ($p_obj != null && get_class($p_obj) == "prescription") {
             $this->prescriptions[0] = $p_obj;
-        } elseif (!is_object($this->prescriptions[0]) || get_class($this->prescriptions[0]) != "prescription") {
+        } elseif (empty($this->prescriptions[0]) || !is_object($this->prescriptions[0]) || (get_class($this->prescriptions[0]) != "prescription")) {
             $this->prescriptions[0] = new Prescription($id);
         }
 
@@ -116,7 +121,7 @@ class C_Prescription extends Controller
 
         // If quantity to dispense is not already set from a POST, set its
         // default value.
-        if (! $this->get_template_vars('DISP_QUANTITY')) {
+        if (! $this->getTemplateVars('DISP_QUANTITY')) {
             $this->assign('DISP_QUANTITY', $this->prescriptions[0]->quantity);
         }
 
@@ -256,7 +261,7 @@ class C_Prescription extends Controller
         // redisplay as in edit_action() but also replicate the fee and
         // include a piece of javascript to call dispense().
         //
-        if ($_POST['disp_button']) {
+        if (!empty($_POST['disp_button'])) {
             $this->assign("DISP_QUANTITY", $_POST['disp_quantity']);
             $this->assign("DISP_FEE", $_POST['disp_fee']);
             $this->assign("ENDING_JAVASCRIPT", "dispense();");
@@ -312,7 +317,7 @@ class C_Prescription extends Controller
         // Probably the Prescription object should handle this instead, but
         // doing it there will require more careful research and testing.
         $prow = sqlQuery("SELECT pt.pharmacy_id FROM prescriptions AS rx, " .
-            "patient_data AS pt WHERE rx.id = '$id' AND pt.pid = rx.patient_id");
+            "patient_data AS pt WHERE rx.id = ? AND pt.pid = rx.patient_id", [$id]);
         if ($prow['pharmacy_id']) {
             $rx->pharmacy->set_id($prow['pharmacy_id']);
             $rx->pharmacy->populate();
@@ -334,11 +339,11 @@ class C_Prescription extends Controller
     {
         $this->providerid = $p->provider->id;
         //print header
-        $pdf->ezImage($GLOBALS['oer_config']['prescriptions']['logo'], '', '50', '', 'center', '');
+        $pdf->ezImage($GLOBALS['oer_config']['prescriptions']['logo'], null, '50', '', 'center', '');
         $pdf->ezColumnsStart(array('num' => 2, 'gap' => 10));
         $res = sqlQuery("SELECT concat('<b>',f.name,'</b>\n',f.street,'\n',f.city,', ',f.state,' ',f.postal_code,'\nTel:',f.phone,if(f.fax != '',concat('\nFax: ',f.fax),'')) addr FROM users JOIN facility AS f ON f.name = users.facility where users.id ='" .
             add_escape_custom($p->provider->id) . "'");
-        $pdf->ezText($res['addr'], 12);
+        $pdf->ezText($res['addr'] ?? '', 12);
         $my_y = $pdf->y;
         $pdf->ezNewPage();
         $pdf->ezText('<b>' . $p->provider->get_name_display() . '</b>', 12);
@@ -425,7 +430,7 @@ class C_Prescription extends Controller
             $res = preg_replace($patterns, $replace, $res);
         }
 
-        echo ('<span class="large">' . $res['addr'] . '</span>');
+        echo ('<span class="large">' . ($res['addr'] ?? '') . '</span>');
         echo ("</td>\n");
         echo ("<td>\n");
         echo ('<b><span class="large">' .  $p->provider->get_name_display() . '</span></b>' . '<br />');
@@ -603,8 +608,8 @@ class C_Prescription extends Controller
         $body .= "</b>     <i>" .
             text($p->substitute_array[$p->get_substitute()]) . "</i>\n" .
             '<b>' . xlt('Disp #') . ':</b> <u>' . text($p->get_quantity()) . "</u>\n" .
-            '<b>' . xlt('Sig') . ':</b> ' . text($p->get_dosage()) . ' ' . text($p->form_array[$p->get_form()]) . ' ' .
-            text($p->route_array[$p->get_route()]) . ' ' . text($p->interval_array[$p->get_interval()]) . "\n";
+            '<b>' . xlt('Sig') . ':</b> ' . text($p->get_dosage() ?? '') . ' ' . text($p->form_array[$p->get_form()] ?? '') . ' ' .
+            text($p->route_array[$p->get_route()] ?? '') . ' ' . text($p->interval_array[$p->get_interval()] ?? '') . "\n";
         if ($p->get_refills() > 0) {
             $body .= "\n<b>" . xlt('Refills') . ":</b> <u>" .  text($p->get_refills());
             if ($p->get_per_refill()) {
@@ -713,10 +718,9 @@ class C_Prescription extends Controller
 
         $this->multiprint_footer($pdf);
 
-            $pFirstName = $p->patient->fname; //modified by epsdky for prescription title change to include patient name and ID
-            $pFName = convert_safe_file_dir_name($pFirstName);
-            $modedFileName = "Rx_{$pFName}_{$p->patient->id}.pdf";
-
+        $pFirstName = $p->patient->fname; //modified by epsdky for prescription filename change to include patient name and ID
+        $pFName = convert_safe_file_dir_name($pFirstName);
+        $modedFileName = "Rx_{$pFName}_{$p->patient->id}.pdf";
         $pdf->ezStream(array('Content-Disposition' => $modedFileName));
         return;
     }
@@ -772,24 +776,24 @@ class C_Prescription extends Controller
                 // Looking at Controller.class.php, it appears that _state is set to false
                 // to indicate that no further HTML is to be generated.
                 $this->_state = false; // Added by Rod - see Controller.class.php
-                return $this->_print_prescription($p, $dummy);
+                return $this->print_prescription($p, $dummy);
                 break;
             case (xl("Print") . " (" . xl("HTML") . ")"):
                                 $this->_state = false;
-                return $this->_print_prescription_css($p, $dummy);
+                return $this->print_prescription_css($p, $dummy);
                         break;
             case xl("Print To Fax"):
                 $this->_state = false;
                 $this->is_print_to_fax = true;
-                return $this->_print_prescription($p, $dummy);
+                return $this->print_prescription($p, $dummy);
                 break;
             case xl("Email"):
-                return $this->_email_prescription($p, $_POST['email_to']);
+                return $this->email_prescription($p, $_POST['email_to']);
                 break;
             case xl("Fax"):
                 //this is intended to be the hook for the hylafax code we already have that hasn't worked its way into the tree yet.
                 //$this->assign("process_result","No fax server is currently setup.");
-                return $this->_fax_prescription($p, $_POST['fax_to']);
+                return $this->fax_prescription($p, $_POST['fax_to']);
                 break;
             case xl("Auto Send"):
                 $pharmacy_id = $_POST['pharmacy_id'];
@@ -797,25 +801,25 @@ class C_Prescription extends Controller
                 $phar = new Pharmacy($_POST['pharmacy_id']);
                 //print_r($phar);
                 if ($phar->get_transmit_method() == TRANSMIT_PRINT) {
-                    return $this->_print_prescription($p, $dummy);
+                    return $this->print_prescription($p, $dummy);
                 } elseif ($phar->get_transmit_method() == TRANSMIT_EMAIL) {
                     $email = $phar->get_email();
                     if (!empty($email)) {
-                        return $this->_email_prescription($p, $phar->get_email());
+                        return $this->email_prescription($p, $phar->get_email());
                     }
 
                     //else print it
                 } elseif ($phar->get_transmit_method() == TRANSMIT_FAX) {
                     $faxNum = $phar->get_fax();
                     if (!empty($faxNum)) {
-                        return $this->_fax_prescription($p, $faxNum);
+                        return $this->fax_prescription($p, $faxNum);
                     }
 
                     // return $this->assign("process_result","No fax server is currently setup.");
                     // else default is printing,
                 } else {
                     //the pharmacy has no default or default is print
-                    return $this->_print_prescription($p, $dummy);
+                    return $this->print_prescription($p, $dummy);
                 }
                 break;
         }
@@ -823,7 +827,7 @@ class C_Prescription extends Controller
         return;
     }
 
-    function _print_prescription($p, &$toFile)
+    function print_prescription($p, &$toFile)
     {
         $pdf = new Cezpdf($GLOBALS['rx_paper_size']);
         $pdf->ezSetMargins($GLOBALS['rx_top_margin'], $GLOBALS['rx_bottom_margin'], $GLOBALS['rx_left_margin'], $GLOBALS['rx_right_margin']);
@@ -849,7 +853,7 @@ class C_Prescription extends Controller
         return;
     }
 
-    function _print_prescription_css($p, &$toFile)
+    function print_prescription_css($p, &$toFile)
     {
 
         $this->multiprintcss_preheader();
@@ -859,7 +863,7 @@ class C_Prescription extends Controller
         $this->multiprintcss_postfooter();
     }
 
-    function _print_prescription_old($p, &$toFile)
+    function print_prescription_old($p, &$toFile)
     {
         $pdf = new Cezpdf($GLOBALS['rx_paper_size']);
         $pdf->ezSetMargins($GLOBALS['rx_top_margin'], $GLOBALS['rx_bottom_margin'], $GLOBALS['rx_left_margin'], $GLOBALS['rx_right_margin']);
@@ -885,7 +889,7 @@ class C_Prescription extends Controller
         return;
     }
 
-    function _email_prescription($p, $email)
+    function email_prescription($p, $email)
     {
         if (empty($email)) {
             $this->assign("process_result", "Email could not be sent, the address supplied: '$email' was empty or invalid.");
@@ -920,11 +924,11 @@ class C_Prescription extends Controller
                     return;
         }
 
-                // process the lookup
+        // process the lookup
         $this->assign("drug", $_POST['drug']);
         $list = array();
         if (!empty($_POST['drug'])) {
-            $list = $this->RxList->get_list($_POST['drug']);
+            $list = $this->RxList->getList($_POST['drug']);
         }
 
         if (is_array($list)) {
@@ -941,7 +945,7 @@ class C_Prescription extends Controller
         $_POST['process'] = "";
     }
 
-    function _fax_prescription($p, $faxNum)
+    function fax_prescription($p, $faxNum)
     {
         $err = "Sent fax";
         //strip - ,(, ), and ws
@@ -959,9 +963,9 @@ class C_Prescription extends Controller
             } else {
                 //generate file to fax
                 $faxFile = "Failed";
-                $this->_print_prescription($p, $faxFile);
+                $this->print_prescription($p, $faxFile);
                 if (empty($faxFile)) {
-                    $err .= " _print_prescription returned empty file";
+                    $err .= " print_prescription returned empty file";
                 }
 
                 $fileName = $GLOBALS['OE_SITE_DIR'] . "/documents/" . $p->get_id() .

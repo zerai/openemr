@@ -19,12 +19,25 @@
 
 require_once("../globals.php");
 require_once("../../custom/code_types.inc.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once("$srcdir/options.inc.php");
 require_once("$srcdir/payment.inc.php");
 
+use OpenEMR\Common\Acl\AclMain;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
+use OpenEMR\Events\Billing\Payments\DeletePayment;
 use OpenEMR\OeUI\OemrUI;
+
+if (!AclMain::aclCheckCore('acct', 'bill', '', 'write') && !AclMain::aclCheckCore('acct', 'eob', '', 'write')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Search Payment")]);
+    exit;
+}
+
+/**
+ * @var EventDispatcherInterface $eventDispatcher
+ */
+$eventDispatcher = $GLOBALS['kernel']->getEventDispatcher();
 
 //===============================================================================
 //Deletion of payment and its corresponding distributions.
@@ -44,7 +57,8 @@ if (isset($_POST["mode"])) {
                 sqlStatement("update form_encounter set last_level_closed=last_level_closed - 1 where pid =? and encounter=?", [$PId, $Encounter]);
             }
         }
-
+        //dispatch this payment is being deleted trigger refund process
+        $eventDispatcher->dispatch(new DeletePayment($DeletePaymentId), DeletePayment::ACTION_DELETE_PAYMENT, 10);
     //delete and log that action
         row_delete("ar_session", "session_id ='" . add_escape_custom($DeletePaymentId) . "'");
         row_modify("ar_activity", "deleted = NOW()", "deleted IS NULL AND session_id = '" . add_escape_custom($DeletePaymentId) . "'");
@@ -68,7 +82,7 @@ if (isset($_POST["mode"])) {
         $PaymentStatus = isset($_POST['PaymentStatus']) ? trim($_POST['PaymentStatus']) : '';
         $PaymentSortBy = isset($_POST['PaymentSortBy']) ? trim($_POST['PaymentSortBy']) : '';
         $PaymentDate = isset($_POST['payment_date']) ? trim($_POST['payment_date']) : '';
-        $QueryString .= "Select * from  ar_session where  ";
+        $QueryString = "Select * from  ar_session where  ";
         $And = '';
 
         $sqlBindArray = array();
@@ -225,7 +239,7 @@ if (isset($_POST["mode"])) {
     }
 
     $(function () {
-    <?php if ($_POST['mode'] == 'SearchPayment') { ?>
+    <?php if (!empty($_POST['mode']) && ($_POST['mode'] == 'SearchPayment')) { ?>
         $("html").animate({ scrollTop: $("div table.table").offset().top }, 800);
     <?php } ?>
 
@@ -376,48 +390,48 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                             <div class="row oe-custom-line">
                                 <div class="forms col-2">
                                     <label class="control-label" for="payment_date"><?php echo xlt('Payment date'); ?>:</label>
-                                    <?php echo generate_select_list("payment_date", "payment_date", "$PaymentDate", "Payment Date", "", ""); ?>
+                                    <?php echo generate_select_list("payment_date", "payment_date", ($PaymentDate ?? ''), "Payment Date", "", ""); ?>
                                 </div>
                                 <div class="forms col-2">
                                     <label class="control-label" for="FromDate"><?php echo xlt('From'); ?>:</label>
-                                    <input class="form-control datepicker" id='FromDate' name='FromDate' type='text' value='<?php echo attr($FromDate); ?>' autocomplete="off" />
+                                    <input class="form-control datepicker" id='FromDate' name='FromDate' type='text' value='<?php echo attr($FromDate ?? ''); ?>' autocomplete="off" />
                                 </div>
                                 <div class="forms col-2">
                                     <label class="control-label" for="ToDate"><?php echo xlt('To{{Range}}'); ?>:</label>
-                                    <input class="form-control datepicker" id='ToDate' name='ToDate' type='text' value='<?php echo attr($ToDate); ?>' autocomplete="off" />
+                                    <input class="form-control datepicker" id='ToDate' name='ToDate' type='text' value='<?php echo attr($ToDate ?? ''); ?>' autocomplete="off" />
                                 </div>
                                 <div class="forms col-3">
                                     <label class="control-label" for="payment_method"><?php echo xlt('Payment Method'); ?>:</label>
-                                    <?php echo generate_select_list("payment_method", "payment_method", "$PaymentMethod", "Payment Method", " ", ""); ?>
+                                    <?php echo generate_select_list("payment_method", "payment_method", ($PaymentMethod ?? ''), "Payment Method", " ", ""); ?>
                                 </div>
                                 <div class="forms col-3">
                                     <label class="control-label" for="check_number"><?php echo xlt('Check Number'); ?>:</label>
-                                    <input autocomplete="off" class="form-control" id="check_number" name="check_number" type="text" value="<?php echo attr($_POST['check_number']); ?>" />
+                                    <input autocomplete="off" class="form-control" id="check_number" name="check_number" type="text" value="<?php echo attr($_POST['check_number'] ?? ''); ?>" />
                                 </div>
                             </div>
                             <div class="row oe-custom-line">
                                 <div class="forms col-4">
                                     <label class="control-label" for="payment_method"><?php echo xlt('Payment Amount'); ?>:</label>
-                                    <input autocomplete="off" class="form-control" id="payment_amount" name="payment_amount" onkeyup="ValidateNumeric(this);" type="text" value="<?php echo attr($_POST['payment_amount']); ?>" />
+                                    <input autocomplete="off" class="form-control" id="payment_amount" name="payment_amount" onkeyup="ValidateNumeric(this);" type="text" value="<?php echo attr($_POST['payment_amount'] ?? ''); ?>" />
                                 </div>
                                 <div class="forms col-2">
                                     <label class="control-label" for="type_name"><?php echo xlt('Paying Entity'); ?>:</label>
-                                    <?php echo generate_select_list("type_name", "payment_type", "$type_name", "Paying Entity", " ", "", "SearchPayingEntityAction()"); ?>
+                                    <?php echo generate_select_list("type_name", "payment_type", ($type_name ?? ''), "Paying Entity", " ", "", "SearchPayingEntityAction()"); ?>
                                 </div>
                                 <div class="forms col-3">
                                     <label class="control-label" for="adjustment_code"><?php echo xlt('Payment Category'); ?>:</label>
-                                    <?php echo generate_select_list("adjustment_code", "payment_adjustment_code", "$adjustment_code", "Paying Category", " ", ""); ?>
+                                    <?php echo generate_select_list("adjustment_code", "payment_adjustment_code", ($adjustment_code ?? ''), "Paying Category", " ", ""); ?>
                                 </div>
                                 <div class="forms col-3">
                                     <label class="control-label" for="PaymentStatus"><?php echo xlt('Pay Status'); ?>:</label>
-                                    <?php echo generate_select_list("PaymentStatus", "payment_status", "$PaymentStatus", "Pay Status", " ", ""); ?>
+                                    <?php echo generate_select_list("PaymentStatus", "payment_status", ($PaymentStatus ?? ''), "Pay Status", " ", ""); ?>
                                 </div>
                             </div>
                             <div class="row oe-custom-line">
                                 <div class="forms col-4">
                                     <label class="control-label" for="type_code"><?php echo xlt('Payment From'); ?>:</label>
-                                    <input id="hidden_ajax_close_value" type="hidden" value="<?php echo attr($div_after_save); ?>" />
-                                    <input autocomplete="off" class="form-control" id='type_code' name='type_code' onkeydown="PreventIt(event)" type="text" value="<?php echo attr($div_after_save); ?>" />
+                                    <input id="hidden_ajax_close_value" type="hidden" value="<?php echo attr($div_after_save ?? ''); ?>" />
+                                    <input autocomplete="off" class="form-control" id='type_code' name='type_code' onkeydown="PreventIt(event)" type="text" value="<?php echo attr($div_after_save ?? ''); ?>" />
                                     <!--onKeyUp="ajaxFunction(event,'non','search_payments.php');"-->
                                     <div id='ajax_div_insurance_section'>
                                         <div id='ajax_div_insurance_error'></div>
@@ -426,13 +440,13 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                                 </div>
                                 <div class="forms col-2">
                                     <label class="control-label" for="div_insurance_or_patient"><?php echo xlt('Payor ID'); ?>:</label>
-                                    <div class="form-control" id="div_insurance_or_patient"><?php echo attr($_POST['hidden_type_code']); ?></div>
+                                    <div class="form-control" id="div_insurance_or_patient"><?php echo attr($_POST['hidden_type_code'] ?? ''); ?></div>
                                     <input id="description" name="description" type="hidden" />
                                     <input id="deposit_date" name="deposit_date" style="display:none" type="text" />
                                 </div>
                                 <div class="forms col-3">
                                     <label class="control-label" for="PaymentSortBy"><?php echo xlt('Sort Result by'); ?>:</label>
-                                    <?php echo generate_select_list("PaymentSortBy", "payment_sort_by", "$PaymentSortBy", "Sort Result by", " ", ""); ?>
+                                    <?php echo generate_select_list("PaymentSortBy", "payment_sort_by", ($PaymentSortBy ?? ''), "Sort Result by", " ", ""); ?>
                                 </div>
                             </div>
                             <!-- can change position of buttons by creating a class 'position-override' and adding rule text-align:center or right as the case may be in individual stylesheets -->
@@ -446,7 +460,7 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                         </div>
                     </fieldset><!--End of Search-->
                     <?php
-                    if ($_POST["mode"] == "SearchPayment") {
+                    if (!empty($_POST["mode"]) && ($_POST["mode"] == "SearchPayment")) {
                         echo "&nbsp;" . "<br />"; // do not remove else below div will not display !!
                         ?>
                         <div class="table-responsive-sm">
@@ -526,10 +540,10 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                                             </td>
                                             <td>
                                                 <!--<a class='iframe medium_modal' href="edit_payment.php?payment_id=<?php echo htmlspecialchars($RowSearch['session_id']); ?>"><?php echo $Payer == '' ? '&nbsp;' : htmlspecialchars($Payer); ?></a>-->
-                                                <a class="medium_modal" data-target="#myModal1" data-toggle="modal" onclick="loadiframe('edit_payment.php?payment_id=<?php echo attr_url($RowSearch['session_id']); ?>'"><?php echo $Payer == '' ? '&nbsp;' : text($Payer); ?></a><!--link to iframe-->
+                                                <a class="medium_modal" href='edit_payment.php?payment_id=<?php echo attr_url($RowSearch['session_id']); ?>')"><?php echo $Payer == '' ? '&nbsp;' : text($Payer); ?></a><!--link to iframe-->
                                             </td>
                                             <td>
-                                                <a class="medium_modal" href='edit_payment.php?payment_id=<?php echo attr_url($RowSearch['session_id']); ?>'"><?php echo $RowSearch['payer_id'] * 1 > 0 ? text($RowSearch['payer_id']) : '&nbsp;'; ?></a>
+                                                <a class="medium_modal" href='edit_payment.php?payment_id=<?php echo attr_url($RowSearch['session_id']); ?>'><?php echo $RowSearch['payer_id'] * 1 > 0 ? text($RowSearch['payer_id']) : '&nbsp;'; ?></a>
                                             </td>
                                             <td class="text-left">
                                                 <!--<a class='iframe medium_modal' href="edit_payment.php?payment_id=<?php echo attr_url($RowSearch['session_id']); ?>"><?php
@@ -568,7 +582,7 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                                             <td class="text-right">
                                                 <a class="medium_modal" href='edit_payment.php?payment_id=<?php echo attr_url($RowSearch['session_id']); ?>'"><?php echo text($RowSearch['pay_total']); ?></a>
                                             </td>
-                                            <td class="<?php echo attr($StringClass); ?>right text-right">
+                                            <td class="<?php echo attr($StringClass ?? ''); ?>right text-right">
                                                 <a class="medium_modal" href='edit_payment.php?payment_id=<?php echo attr_url($RowSearch['session_id']); ?>'"><?php echo text(number_format($UndistributedAmount, 2)); ?></a>
                                             </td>
                                         </tr>
@@ -590,21 +604,16 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                     <div class="row">
                         <input id='mode' name='mode' type='hidden' value='' />
                         <input id='ajax_mode' name='ajax_mode' type='hidden' value='' />
-                        <input id="hidden_type_code" name="hidden_type_code" type="hidden" value="<?php echo attr($_POST['hidden_type_code']); ?>" />
+                        <input id="hidden_type_code" name="hidden_type_code" type="hidden" value="<?php echo attr($_POST['hidden_type_code'] ?? ''); ?>" />
                         <input id='DeletePaymentId' name='DeletePaymentId' type='hidden' value='' />
-                        <input id='SortFieldOld' name='SortFieldOld' type='hidden' value='<?php echo attr($PaymentSortBy); ?>' />
-                        <input id='Sort' name='Sort' type='hidden' value='<?php echo attr($Sort); ?>' />
-                        <input id="after_value" name="after_value" type="hidden" value="<?php echo attr($Message); ?>" />
+                        <input id='SortFieldOld' name='SortFieldOld' type='hidden' value='<?php echo attr($PaymentSortBy ?? ''); ?>' />
+                        <input id='Sort' name='Sort' type='hidden' value='<?php echo attr($Sort ?? ''); ?>' />
+                        <input id="after_value" name="after_value" type="hidden" value="<?php echo attr($Message ?? ''); ?>" />
                     </div>
                 </form>
             </div>
         </div>
     </div><!--end of container div-->
 <?php $oemr_ui->oeBelowContainerDiv(); ?>
-<script>
-function loadiframe(htmlHref) { //load iframe
-    document.getElementById('targetiframe1').src = htmlHref;
-}
-</script>
 </body>
 </html>

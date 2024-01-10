@@ -30,6 +30,8 @@ $light: $gray-100;
 $bs-dark: $gray-800;
 $gray: $gray-600;
 
+$navbar-text-color: $pale !default;
+
 /* Array of theme colors that can be added to */
 $theme-colors: (
   primary: $blue,
@@ -71,6 +73,7 @@ $colors: (
   "gray": $gray-600,
   "gray-dark": $gray-800,
   "black": $black,
+  "navbar-text-color": $navbar-text-color,
   "gray100": $gray-100,
   "gray200": $gray-200,
   "gray300": $gray-300,
@@ -86,8 +89,8 @@ $colors: (
 
 $body-bg: $white;
 $body-color: $black;
-$font-size-base: 0.875rem;
-$rfs-base-value: 0.875rem;
+$font-size-base: 1rem;
+$rfs-base-value: 1rem;
 $font-family-sans-serif: -apple-system, "BlinkMacSystemFont", "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 $font-family-base: $font-family-sans-serif;
 

@@ -13,15 +13,15 @@
  */
 
 require_once(__DIR__ . "/../../globals.php");
-require_once("$srcdir/api.inc");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/api.inc.php");
+require_once("$srcdir/patient.inc.php");
 require_once("$srcdir/options.inc.php");
 
 use OpenEMR\Common\Csrf\CsrfUtils;
 use OpenEMR\Core\Header;
 
 $returnurl = 'encounter_top.php';
-$formid = 0 + (isset($_GET['id']) ? $_GET['id'] : 0);
+$formid = (int) (isset($_GET['id']) ? $_GET['id'] : 0);
 $check_res = $formid ? formFetch("form_clinical_instructions", $formid) : array();
 ?>
 <html>
@@ -41,7 +41,7 @@ $check_res = $formid ? formFetch("form_clinical_instructions", $formid) : array(
                             <legend><?php echo xlt('Instructions'); ?></legend>
                             <div class="container">
                                 <div class="form-group">
-                                    <textarea name="instruction" id="instruction" class="form-control" cols="80" rows="5" ><?php echo text($check_res['instruction']); ?></textarea>
+                                    <textarea name="instruction" id="instruction" class="form-control" cols="80" rows="5" ><?php echo text($check_res['instruction'] ?? ''); ?></textarea>
                                 </div>
                             </div>
                         </fieldset>

@@ -27,13 +27,22 @@ return array(
                 $resultSetPrototype = new ResultSet();
                 $resultSetPrototype->setArrayObjectPrototype(new InstModule());
                 $tableGateway = new Installer\Model\InstModuleTableGateway('InstModule', $dbAdapter, null, $resultSetPrototype);
-
                 $InstModuleTable = new Installer\Model\InstModuleTable($tableGateway, $container);
                 return new Installer\Controller\InstallerController($InstModuleTable);
             },
         ]
     ),
-
+    'service_manager' => [
+        'factories' => [
+            Installer\Model\InstModuleTable::class => function (ContainerInterface $container, $requestedName) {
+                $dbAdapter = $container->get(Adapter::class);
+                $resultSetPrototype = new ResultSet();
+                $resultSetPrototype->setArrayObjectPrototype(new InstModule());
+                $tableGateway = new Installer\Model\InstModuleTableGateway('InstModule', $dbAdapter, null, $resultSetPrototype);
+                return new Installer\Model\InstModuleTable($tableGateway, $container);
+            },
+        ]
+    ],
     'router' => array(
         'routes' => array(
             'Installer' => array(
@@ -51,34 +60,7 @@ return array(
                 ),
             ),
 
-                ),
-            ),
-    'console' => array(
-        'router' => array(
-            'routes' => array(
-
-                'zfc-module' => array(
-                    'options' => array(
-                        'route' => 'zfc-module --site= --modaction= --modname= ',
-                        'defaults' => array(
-                            'controller' => Installer\Controller\InstallerController::class,
-                            'action' => 'command-install-module',
-                        ),
-                    )
-                ),
-
-                'register' => array(
-                    'options' => array(
-                        'route'    => 'register --mtype= --modname=',
-                        'defaults' => array(
-                            'controller' => Installer\Controller\InstallerController::class,
-                            'action'     => 'register',
-                        ),
-                    ),
-                ),
-
-            )
-        )
+        ),
     ),
     'view_manager' => array(
         'template_map' => array(

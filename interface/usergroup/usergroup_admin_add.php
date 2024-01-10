@@ -12,13 +12,15 @@
  */
 
 require_once("../globals.php");
+require_once("$srcdir/calendar.inc.php");
 require_once("$srcdir/options.inc.php");
-require_once("$srcdir/erx_javascript.inc.php");
 
 use OpenEMR\Common\Acl\AclExtended;
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
+use OpenEMR\Events\User\UserEditRenderEvent;
 use OpenEMR\Menu\MainMenuRole;
 use OpenEMR\Menu\PatientMenuRole;
 use OpenEMR\Services\FacilityService;
@@ -27,7 +29,8 @@ use OpenEMR\Services\UserService;
 $facilityService = new FacilityService();
 
 if (!AclMain::aclCheckCore('admin', 'users')) {
-    exit();
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Add User")]);
+    exit;
 }
 
 $alertmsg = '';
@@ -36,7 +39,7 @@ $alertmsg = '';
 <html>
 <head>
 
-<?php Header::setupHeader(['common','opener']); ?>
+<?php Header::setupHeader(['common','opener', 'erx']); ?>
 
 <script src="checkpwd_validation.js"></script>
 
@@ -221,6 +224,17 @@ function authorized_clicked() {
 <span class="font-weight-bold">&nbsp;</span>
 <table class="border-0" cellpadding='0' cellspacing='0' style="width:600px;">
 <tr>
+    <td colspan="4">
+        <?php
+        // TODO: we eventually want to move to a responsive layout and not use tables here.  So we are going to give
+        // module writers the ability to inject divs, tables, or whatever inside the cell instead of having them
+        // generate additional rows / table columns which locks us into that format.
+        $preRenderEvent = new UserEditRenderEvent('usergroup_admin_add');
+        $GLOBALS['kernel']->getEventDispatcher()->dispatch($preRenderEvent, UserEditRenderEvent::EVENT_USER_EDIT_RENDER_BEFORE);
+        ?>
+    </td>
+</tr>
+<tr>
 <td style="width:150px;"><span class="text"><?php echo xlt('Username'); ?>: </span></td><td style="width:220px;"><input type="text" name="rumple" style="width:120px;" class="form-control"><span class="mandatory"></span></td>
 <?php if (empty($GLOBALS['gbl_ldap_enabled']) || empty($GLOBALS['gbl_ldap_exclusions'])) { ?>
 <td style="width:150px;"><span class="text"><?php echo xlt('Password'); ?>: </span></td><td style="width:250px;"><input type="password" style="width:120px;" name="stiltskin" class="form-control"><span class="mandatory"></span></td>
@@ -264,6 +278,10 @@ foreach ($result2 as $iter) {
 </tr>
 <tr>
 <td><span class="text"><?php echo xlt('Last Name'); ?>: </span></td><td><input type="text" name='lname' id='lname' style="width:120px;" class="form-control"><span class="mandatory"></span></td>
+<td><span class=text><?php echo xlt('Suffix'); ?>: </span></td><td><input type="text" name=suffix id=suffix style="width:150px;"  class="form-control"></td>
+</tr>
+<tr>
+<td><span class=text><?php echo xlt('Valedictory'); ?>: </span></td><td><input type="text" name=valedictory id=valedictory style="width:150px;"  class="form-control"></td>
 <td><span class="text"><?php echo xlt('Default Facility'); ?>: </span></td>
 <td>
 <select style="width:120px;" name=facility_id class="form-control">
@@ -349,7 +367,7 @@ foreach (array(1 => xl('None{{Authorization}}'), 2 => xl('Only Mine'), 3 => xl('
                     continue;
                 }
                 echo "<option value='" . attr($p_id) . "'";
-                if ((int)$iter["supervisor_id"] === $p_id) {
+                if ((int)($iter["supervisor_id"] ?? null) === $p_id) {
                     echo "selected";
                 }
                 echo ">" . text($activeUser['lname']) . ' ' .
@@ -367,7 +385,8 @@ foreach (array(1 => xl('None{{Authorization}}'), 2 => xl('Only Mine'), 3 => xl('
 </td>
 </tr>
 <tr>
-<td><span class="text"><?php echo xlt('Weno Provider ID'); ?>: </span></td><td><input type="text" name="erxprid" style="width:120px;" class="form-control" value="<?php echo attr($iter["weno_prov_id"]); ?>"></td>
+<td><span class="text"><?php echo xlt('Weno Provider ID'); ?>: </span></td><td><input type="text" name="erxprid" style="width:120px;" class="form-control" value="<?php echo attr($iter["weno_prov_id"] ?? ''); ?>"></td>
+<td><span class="text"><?php echo xlt('Google Email for Login'); ?>: </span></td><td><input type="text" name="google_signin_email" style="width:150px;" class="form-control" value="<?php echo attr($iter["google_signin_email"] ?? ''); ?>"></td>
 </tr>
 <?php if ($GLOBALS['inhouse_pharmacy']) { ?>
 <tr>
@@ -396,6 +415,56 @@ foreach (array(1 => xl('None{{Authorization}}'), 2 => xl('Only Mine'), 3 => xl('
 </tr>
 <?php } ?>
 
+<!-- facility and warehouse restrictions, optional -->
+<?php if (!empty($GLOBALS['gbl_fac_warehouse_restrictions']) || !empty($GLOBALS['restrict_user_facility'])) { ?>
+ <tr title="<?php echo xla('If nothing is selected here then all are permitted.'); ?>">
+  <td class="text"><?php echo !empty($GLOBALS['gbl_fac_warehouse_restrictions']) ?
+    xlt('Facility and warehouse permissions') : xlt('Facility permissions'); ?>:</td>
+  <td colspan="3">
+   <select name="schedule_facility[]" multiple style="width:490px;">
+    <?php
+    $user_id = 0; // in user_admin.php this is intval($_GET["id"]).
+    $userFacilities = getUserFacilities($user_id, 'id', $GLOBALS['gbl_fac_warehouse_restrictions']);
+    $ufid = array();
+    foreach ($userFacilities as $uf) {
+        $ufid[] = $uf['id'];
+    }
+    $fres = sqlStatement("select * from facility order by name");
+    if ($fres) {
+        while ($frow = sqlFetchArray($fres)) {
+            // Get the warehouses that are linked to this user and facility.
+            $whids = getUserFacWH($user_id, $frow['id']); // from calendar.inc.php
+            // Generate an option for just the facility with no warehouse restriction.
+            echo "    <option";
+            if (empty($whids) && in_array($frow['id'], $ufid)) {
+                echo ' selected';
+            }
+            echo " value='" . attr($frow['id']) . "'>" . text($frow['name']) . "</option>\n";
+            // Then generate an option for each of the facility's warehouses.
+            // Does not apply if the site does not use warehouse restrictions.
+            if (!empty($GLOBALS['gbl_fac_warehouse_restrictions'])) {
+                $lres = sqlStatement(
+                    "SELECT option_id, title FROM list_options WHERE " .
+                    "list_id = ? AND option_value = ? ORDER BY seq, title",
+                    array('warehouse', $frow['id'])
+                );
+                while ($lrow = sqlFetchArray($lres)) {
+                    echo "    <option";
+                    if (in_array($lrow['option_id'], $whids)) {
+                        echo ' selected';
+                    }
+                    echo " value='" . attr($frow['id']) . "/" . attr($lrow['option_id']) . "'>&nbsp;&nbsp;&nbsp;" .
+                        text(xl_list_label($lrow['title'])) . "</option>\n";
+                }
+            }
+        }
+    }
+    ?>
+   </select>
+  </td>
+ </tr>
+<?php } ?>
+
  <tr>
 <td class='text'><?php echo xlt('Access Control'); ?>:</td>
  <td><select name="access_group[]" multiple style="width:120px;" class="form-control">
@@ -419,6 +488,39 @@ foreach ($list_acl_groups as $value) {
   <td><textarea name=info style="width:120px;" cols='27' rows='4' wrap='auto' class="form-control"></textarea></td>
 
   </tr>
+    <tr>
+        <td><span class=text><?php echo xlt('Default Billing Facility'); ?>: </span></td>
+        <td><select name="billing_facility_id" style="width:150px;" class="form-control">
+                <?php
+                $fres = $facilityService->getAllBillingLocations();
+                if ($fres) {
+                    $billResults = [];
+                    for ($iter2 = 0; $iter2 < sizeof($fres); $iter2++) {
+                        $billResults[$iter2] = $fres[$iter2];
+                    }
+
+                    foreach ($billResults as $iter2) {
+                        ?>
+                        <option value="<?php echo attr($iter2['id']); ?>"><?php echo text($iter2['name']); ?></option>
+                        <?php
+                    }
+                }
+                ?>
+            </select>
+        </td>
+        <td></td>
+    </tr>
+    <tr>
+        <td colspan="4">
+            <?php
+            // TODO: we eventually want to move to a responsive layout and not use tables here.  So we are going to give
+            // module writers the ability to inject divs, tables, or whatever inside the cell instead of having them
+            // generate additional rows / table columns which locks us into that format.
+            $preRenderEvent = new UserEditRenderEvent('usergroup_admin_add.php');
+            $GLOBALS['kernel']->getEventDispatcher()->dispatch($preRenderEvent, UserEditRenderEvent::EVENT_USER_EDIT_RENDER_AFTER);
+            ?>
+        </td>
+    </tr>
   <tr height="25"><td colspan="4">&nbsp;</td></tr>
 
 </table>
@@ -462,7 +564,6 @@ foreach ($result as $iter) {
 </td>
 
 </tr>
-
 <tr<?php echo ($GLOBALS['disable_non_default_groups']) ? " style='display:none'" : ""; ?>>
 
 <td valign='top'>

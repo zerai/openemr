@@ -371,12 +371,13 @@ class HTML_TreeNode
   // author's intention was in using this name twice or if it was a mistake
     //var $parent;
 
-
     /**
     * Javascript event handlers;
     * @var array
     */
     var $events;
+
+    var $id;
 
     /**
     * Constructor
@@ -451,7 +452,7 @@ class HTML_TreeNode
     * @access public
     * @param  object $node The new node
     */
-    function &addItem(&$node)
+    function &addItem($node)
     {
         $node->parent  = &$this;
         $this->items[] = &$node;
@@ -575,6 +576,9 @@ class HTML_TreeMenu_DHTML extends HTML_TreeMenu_Presentation
     */
     var $noTopLevelImages;
 
+    var $maxDepth;
+    var $usePersistence;
+
     /**
     * Constructor, takes the tree structure as
     * an argument and an array of options which
@@ -676,17 +680,17 @@ class HTML_TreeMenu_DHTML extends HTML_TreeMenu_Presentation
         $expanded  = $this->isDynamic ? ($nodeObj->expanded  ? 'true' : 'false') : 'true';
         $isDynamic = $this->isDynamic ? ($nodeObj->isDynamic ? 'true' : 'false') : 'false';
         $html = sprintf(
-            "\t %s = %s.addItem(new TreeNode('%s', %s, %s, %s, %s, '%s', '%s', %s));\n",
+            "\t %s = %s.addItem(new TreeNode(jsAttr(%s), jsAttr(%s), jsAttr(%s), %s, %s, '%s', '%s', jsAttr(%s)));\n",
             $return,
             $prefix,
-            attr($nodeObj->text),
-            !empty($nodeObj->icon) ? "'" . $nodeObj->icon . "'" : 'null',
-            !empty($nodeObj->link) ? "'" . attr($nodeObj->link) . "'" : 'null',
+            js_escape($nodeObj->text),
+            !empty($nodeObj->icon) ?  js_escape($nodeObj->icon) : 'null',
+            !empty($nodeObj->link) ? js_escape($nodeObj->link) : 'null',
             $expanded,
             $isDynamic,
             $nodeObj->cssClass,
             $nodeObj->linkTarget,
-            !empty($nodeObj->expandedIcon) ? "'" . $nodeObj->expandedIcon . "'" : 'null'
+            !empty($nodeObj->expandedIcon) ? js_escape($nodeObj->expandedIcon) : 'null'
         );
 
         foreach ($nodeObj->events as $event => $handler) {
@@ -748,6 +752,8 @@ class HTML_TreeMenu_Listbox extends HTML_TreeMenu_Presentation
     */
     var $linkTarget;
 
+    var $submitText;
+
     /**
     * Constructor
     *
@@ -796,7 +802,7 @@ class HTML_TreeMenu_Listbox extends HTML_TreeMenu_Presentation
         }
 
         if ($this->promoText) {
-            return sprintf('<option value="">%s</option>%s', $this->promoText, $nodeHTML);
+            return sprintf('<option value="">%s</option>%s', text($this->promoText ?? ''), $nodeHTML);
         } else {
             return $nodeHTML;
         }
@@ -809,7 +815,7 @@ class HTML_TreeMenu_Listbox extends HTML_TreeMenu_Presentation
     */
     function _nodeToHTML($node, $prefix = '')
     {
-        $html = sprintf('<option value="%s">%s%s</option>', $node->id, $prefix, $node->text);
+        $html = sprintf('<option value="%s">%s%s</option>', attr($node->id), $prefix, text($node->text));
 
         /**
         * Loop through subnodes

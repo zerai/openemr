@@ -15,12 +15,19 @@
  */
 
 require_once("../globals.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once "$srcdir/options.inc.php";
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
+use OpenEMR\Common\Utils\FormatMoney;
 use OpenEMR\Core\Header;
+
+if (!AclMain::aclCheckCore('acct', 'rep') && !AclMain::aclCheckCore('acct', 'rep_a')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Sales by Item")]);
+    exit;
+}
 
 if (!empty($_POST)) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
@@ -29,17 +36,15 @@ if (!empty($_POST)) {
 }
 
 $form_provider  = $_POST['form_provider'] ?? null;
+if (!AclMain::aclCheckCore('acct', 'rep_a')) {
+    // only allow user to see their encounter information
+    $form_provider = $_SESSION['authUserID'];
+}
+
 if (!empty($_POST['form_refresh']) || !empty($_POST['form_csvexport'])) {
     $form_details = (!empty($_POST['form_details'])) ? true : false;
 } else {
     $form_details = false;
-}
-
-function bucks($amount)
-{
-    if ($amount) {
-        return oeFormatMoney($amount);
-    }
 }
 
 function display_desc($desc)
@@ -86,7 +91,7 @@ function thisLineItem($patient_id, $encounter_id, $rowcat, $description, $transd
                     echo csvEscape(display_desc($category)) . ',';
                     echo csvEscape(display_desc($product))  . ',';
                     echo csvEscape($productqty)             . ',';
-                    echo csvEscape(bucks($producttotal));
+                    echo csvEscape(FormatMoney::getBucks($producttotal));
                     echo "\n";
                 }
             } else {
@@ -116,7 +121,7 @@ function thisLineItem($patient_id, $encounter_id, $rowcat, $description, $transd
                 <?php echo text($productqty); ?>
   </td>
   <td align="right">
-                <?php echo text(bucks($producttotal)); ?>
+                <?php echo text(FormatMoney::getBucks($producttotal)); ?>
   </td>
  </tr>
                 <?php
@@ -155,7 +160,7 @@ function thisLineItem($patient_id, $encounter_id, $rowcat, $description, $transd
                 <?php echo text($catqty); ?>
   </td>
   <td align="right">
-                <?php echo text(bucks($cattotal)); ?>
+                <?php echo text(FormatMoney::getBucks($cattotal)); ?>
   </td>
  </tr>
                 <?php
@@ -168,7 +173,7 @@ function thisLineItem($patient_id, $encounter_id, $rowcat, $description, $transd
         $catleft = $category;
     }
 
-    if ($_POST['form_details']) {
+    if (!empty($_POST['form_details'])) {
         if ($_POST['form_csvexport']) {
             echo csvEscape(display_desc($category)) . ',';
             echo csvEscape(display_desc($product)) . ',';
@@ -187,7 +192,7 @@ function thisLineItem($patient_id, $encounter_id, $rowcat, $description, $transd
 
            // echo '"' . display_desc($invnumber) . '",';
             echo csvEscape(display_desc($qty)) . ',';
-            echo csvEscape(bucks($rowamount));
+            echo csvEscape(FormatMoney::getBucks($rowamount));
             echo "\n";
         } else {
             ?>
@@ -234,7 +239,7 @@ function thisLineItem($patient_id, $encounter_id, $rowcat, $description, $transd
             <?php echo text($qty); ?>
       </td>
       <td align="right">
-            <?php echo text(bucks($rowamount)); ?>
+            <?php echo text(FormatMoney::getBucks($rowamount)); ?>
       </td>
      </tr>
             <?php
@@ -247,10 +252,6 @@ function thisLineItem($patient_id, $encounter_id, $rowcat, $description, $transd
     $catqty       += $qty;
     $grandqty     += $qty;
 } // end function
-
-if (! AclMain::aclCheckCore('acct', 'rep')) {
-    die(xlt("Unauthorized access."));
-}
 
 $form_from_date = (isset($_POST['form_from_date'])) ? DateToYYYYMMDD($_POST['form_from_date']) : date('Y-m-d');
 $form_to_date   = (isset($_POST['form_to_date'])) ? DateToYYYYMMDD($_POST['form_to_date']) : date('Y-m-d');
@@ -620,7 +621,7 @@ if (!empty($_POST['form_refresh']) || !empty($_POST['form_csvexport'])) {
         if (! $_POST['form_details']) {
             echo csvEscape(display_desc($product)) . ',';
             echo csvEscape($productqty)            . ',';
-            echo csvEscape(bucks($producttotal));
+            echo csvEscape(FormatMoney::getBucks($producttotal));
             echo "\n";
         }
     } else {
@@ -651,7 +652,7 @@ if (!empty($_POST['form_refresh']) || !empty($_POST['form_csvexport'])) {
         <?php echo text($productqty); ?>
   </td>
   <td align="right">
-        <?php echo text(bucks($producttotal)); ?>
+        <?php echo text(FormatMoney::getBucks($producttotal)); ?>
   </td>
  </tr>
 
@@ -675,7 +676,7 @@ if (!empty($_POST['form_refresh']) || !empty($_POST['form_csvexport'])) {
         <?php echo text($catqty); ?>
   </strong></td>
   <td align="right"><strong>
-        <?php echo text(bucks($cattotal)); ?>
+        <?php echo text(FormatMoney::getBucks($cattotal)); ?>
   </strong></td>
  </tr>
 
@@ -695,7 +696,7 @@ if (!empty($_POST['form_refresh']) || !empty($_POST['form_csvexport'])) {
         <?php echo text($grandqty); ?>
   </strong></td>
   <td align="right"><strong>
-        <?php echo text(bucks($grandtotal)); ?>
+        <?php echo text(FormatMoney::getBucks($grandtotal)); ?>
   </strong></td>
  </tr>
         <?php $report_from_date = oeFormatShortDate($form_from_date)  ;

@@ -11,8 +11,8 @@
  */
 
 require_once('../../globals.php');
-require_once($GLOBALS['srcdir'] . '/pnotes.inc');
-require_once($GLOBALS['srcdir'] . '/patient.inc');
+require_once($GLOBALS['srcdir'] . '/pnotes.inc.php');
+require_once($GLOBALS['srcdir'] . '/patient.inc.php');
 require_once($GLOBALS['srcdir'] . '/options.inc.php');
 require_once($GLOBALS['srcdir'] . '/gprelations.inc.php');
 
@@ -22,8 +22,8 @@ use OpenEMR\Common\Logging\EventAuditLogger;
 use OpenEMR\Core\Header;
 use OpenEMR\Services\UserService;
 
-if ($_GET['set_pid']) {
-    require_once($GLOBALS['srcdir'] . '/pid.inc');
+if (!empty($_GET['set_pid'])) {
+    require_once($GLOBALS['srcdir'] . '/pid.inc.php');
     setpid($_GET['set_pid']);
 }
 
@@ -59,14 +59,14 @@ if ($tmp['squad'] && ! AclMain::aclCheckCore('squads', $tmp['squad'])) {
 $N = 15;
 $M = 15;
 
-$mode   = $_REQUEST['mode'];
-$offset = $_REQUEST['offset'];
-$offset_sent = $_REQUEST['offset_sent'];
-$form_active = $_REQUEST['form_active'];
-$form_inactive = $_REQUEST['form_inactive'];
-$noteid = $_REQUEST['noteid'];
+$mode   = $_REQUEST['mode'] ?? null;
+$offset = $_REQUEST['offset'] ?? null;
+$offset_sent = $_REQUEST['offset_sent'] ?? null;
+$form_active = $_REQUEST['form_active'] ?? null;
+$form_inactive = $_REQUEST['form_inactive'] ?? null;
+$noteid = $_REQUEST['noteid'] ?? null;
 $form_doc_only = isset($_POST['mode']) ? (empty($_POST['form_doc_only']) ? 0 : 1) : 1;
-if ($_REQUEST['s'] == '1') {
+if (!empty($_REQUEST['s']) && ($_REQUEST['s'] == '1')) {
     $inbox = "";
     $outbox = "current";
     $inbox_style = "style='display:none;border:5px solid var(--white);'";
@@ -460,10 +460,10 @@ function restoreSession() {
                                 $body = preg_replace('/(\sto\s)-patient-(\))/', '${1}' . $patientname . '${2}', $body);
                                 $body = preg_replace('/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s\([^)(]+\s)(to)(\s[^)(]+\))/', '${1}' . xl('to{{Destination}}') . '${3}', $body);
                                 if (preg_match('/^\d\d\d\d-\d\d-\d\d \d\d\:\d\d /', $body)) {
-                                    $body = nl2br(text(oeFormatPatientNote($body)));
+                                    $body = pnoteConvertLinks(nl2br(text(oeFormatPatientNote($body))));
                                 } else {
                                     $body = text(oeFormatSDFT(strtotime($iter['date'])) . date(' H:i', strtotime($iter['date']))) .
-                                    ' (' . text($iter['user']) . ') ' . nl2br(text(oeFormatPatientNote($body)));
+                                    ' (' . text($iter['user']) . ') ' . pnoteConvertLinks(nl2br(text(oeFormatPatientNote($body))));
                                 }
 
                                 if (($iter["activity"]) && ($iter['message_status'] != "Done")) {
@@ -473,7 +473,7 @@ function restoreSession() {
                                 }
 
                                 // highlight the row if it's been selected for updating
-                                if ($_REQUEST['noteid'] == $row_note_id) {
+                                if (!empty($_REQUEST['noteid']) && ($_REQUEST['noteid'] == $row_note_id)) {
                                     echo " <tr class='noterow highlightcolor' id='" . attr($row_note_id) . "'>\n";
                                 } else {
                                     echo " <tr class='noterow' id='" . attr($row_note_id) . "'>\n";
@@ -526,8 +526,6 @@ function restoreSession() {
                                 echo !is_null($updateBy) ? text($updateBy['fname']) . ' ' . text($updateBy['lname']) : '';
                                 echo "  </td>\n";
                                 echo " </tr>\n";
-
-                                $notes_count++;
                             }
                         } else {
                             //no results
@@ -626,10 +624,10 @@ function restoreSession() {
 
                         $body = $iter['body'];
                         if (preg_match('/^\d\d\d\d-\d\d-\d\d \d\d\:\d\d /', $body)) {
-                            $body = nl2br(text(oeFormatPatientNote($body)));
+                            $body = pnoteConvertLinks(nl2br(text(oeFormatPatientNote($body))));
                         } else {
                             $body = text(oeFormatSDFT(strtotime($iter['date'])) . date(' H:i', strtotime($iter['date']))) .
-                            ' (' . text($iter['user']) . ') ' . nl2br(text(oeFormatPatientNote($body)));
+                            ' (' . text($iter['user']) . ') ' . pnoteConvertLinks(nl2br(text(oeFormatPatientNote($body))));
                         }
 
                         $body = preg_replace('/(:\d{2}\s\()' . $patient_id . '(\sto\s)/', '${1}' . $patientname . '${2}', $body);
@@ -732,7 +730,7 @@ function restoreSession() {
 </body>
 <script>
 <?php
-if ($_GET['set_pid']) {
+if (!empty($_GET['set_pid'])) {
     $ndata = getPatientData($patient_id, "fname, lname, pubpid");
     ?>
  parent.left_nav.setPatient(<?php echo js_escape($ndata['fname'] . " " . $ndata['lname']) . "," .

@@ -27,13 +27,12 @@
 
 require_once dirname(__FILE__) . '/base_controller.php';
 require_once("{$GLOBALS['srcdir']}/appointments.inc.php");
-require_once("{$GLOBALS['srcdir']}/pid.inc");
+require_once("{$GLOBALS['srcdir']}/pid.inc.php");
 
 use OpenEMR\Common\Session\SessionUtil;
 
 class TherapyGroupsController extends BaseController
 {
-
     public $therapyGroupModel;
 
     /* Note: Created functions to return arrays so that xl method can be used in array rendering. */

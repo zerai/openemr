@@ -2,7 +2,7 @@
 
 /**
  *
- * Copyright (C) 2016-2019 Jerry Padgett <sjpadgett@gmail.com>
+ * Copyright (C) 2016-2021 Jerry Padgett <sjpadgett@gmail.com>
  * Copyright (C) 2020 Tyler Wrenn <tyler@tylerwrenn.com>
  *
  * LICENSE: This program is free software; you can redistribute it and/or
@@ -26,16 +26,15 @@
 //namespace OnsitePortal;
 
 require_once("verify_session.php");
-require_once("./../library/report.inc");
+require_once("./../library/report.inc.php");
 require_once("./../library/options.inc.php");
-require_once("./../library/lists.inc");
+require_once("./../library/lists.inc.php");
 require_once("./../custom/code_types.inc.php");
-require_once("./../library/forms.inc");
-require_once("./../library/patient.inc");
+require_once("./../library/forms.inc.php");
+require_once("./../library/patient.inc.php");
 
 require_once("./lib/appsql.class.php");
-require_once("./lib/section_fetch.class.php");
-// $fetchsec = new FetchSection ();
+
 $appsql = new ApplicationTable();
 $pending = $appsql->getPortalAudit($pid, 'review');
 $N = 7;
@@ -43,8 +42,7 @@ $N = 7;
 
 <style>
     .insurance .table .bold {
-        font-weight: bold;
-        font-size: 14px;
+        font-weight: normal;
     }
 
     .insurance .table .text {
@@ -52,26 +50,21 @@ $N = 7;
     }
 
     .demographics .groupname.bold {
-        font-size: 18px;
+        font-size: 1rem;
         color: var(--primary);
     }
 
     .demographics table .bold {
         font-weight: normal;
-        font-size: 16px;
-        color: var(--success);
-        padding: 1px;
         border-top: 0;
     }
 
     .demographics table .text {
         font-weight: normal;
-        font-size: 15px;
         color: var(--danger);
     }
 
     .demographics .table td {
-        padding: 1px;
         border-top: 0;
     }
 
@@ -81,15 +74,15 @@ $N = 7;
 <div class='demographics table-responsive' id='DEM'>
 
     <?php
-                $result1 = getPatientData($pid);
-                $result2 = getEmployerData($pid);
+    $result1 = getPatientData($pid);
+    $result2 = getEmployerData($pid);
     ?>
     <div class="card">
             <header class="card-header border border-bottom-0"><?php echo xlt('Profile Demographics'); ?>
             <?php if ($pending) {
-                echo '<button type="button" id="editDems" class="btn btn-danger btn-sm float-right text-white" style="font-size: 14px">' . xlt('Pending Review') . '</button>';
+                echo '<button type="button" id="editDems" class="btn btn-danger btn-sm float-right text-white">' . xlt('Pending Review') . '</button>';
             } else {
-                echo '<button type="button" id="editDems" class="btn btn-success btn-sm float-right text-white" style="font-size: 14px">' . xlt('Revise') . '</button>';
+                echo '<button type="button" id="editDems" class="btn btn-success btn-sm float-right text-white">' . xlt('Revise') . '</button>';
             }
             ?>
             </header>
@@ -131,8 +124,24 @@ $N = 7;
         echo "<div class='card'>";
         echo "<header class='card-header border border-bottom-0 immunizations'>" . xlt('Patient Immunization') . '</header>';
         echo "<div class='card-body border'>";
-        $result = FetchSection::getImmunizations($pid);
+
+        $query = "SELECT im.*, cd.code_text, DATE(administered_date) AS administered_date,
+            DATE_FORMAT(administered_date,'%m/%d/%Y') AS administered_formatted, lo.title as route_of_administration,
+            u.title, u.fname, u.mname, u.lname, u.npi, u.street, u.streetb, u.city, u.state, u.zip, u.phonew1,
+            f.name, f.phone, lo.notes as route_code
+            FROM immunizations AS im
+            LEFT JOIN codes AS cd ON cd.code = im.cvx_code
+            JOIN code_types AS ctype ON ctype.ct_key = 'CVX' AND ctype.ct_id=cd.code_type
+            LEFT JOIN list_options AS lo ON lo.list_id = 'drug_route' AND lo.option_id = im.route
+            LEFT JOIN users AS u ON u.id = im.administered_by_id
+            LEFT JOIN facility AS f ON f.id = u.facility_id
+            WHERE im.patient_id=?";
+        $result = $appsql->zQuery($query, array($pid));
+        $records = array();
         foreach ($result as $row) {
+            $records[] = $row;
+        }
+        foreach ($records as $row) {
             echo text($row['administered_formatted']) . ' : ';
             echo text($row['code_text']) . ' : ';
             echo text($row['note']) . ' : ';

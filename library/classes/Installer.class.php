@@ -19,6 +19,42 @@ use OpenEMR\Gacl\GaclApi;
 
 class Installer
 {
+    public $iuser;
+    public $iuserpass;
+    public $iuname;
+    public $iufname;
+    public $igroup;
+    public $i2faEnable;
+    public $i2faSecret;
+    public $server;
+    public $loginhost;
+    public $port;
+    public $root;
+    public $rootpass;
+    public $login;
+    public $pass;
+    public $dbname;
+    public $collate;
+    public $site;
+    public $source_site_id;
+    public $clone_database;
+    public $no_root_db_access;
+    public $development_translations;
+    public $new_theme;
+    public $ippf_specific;
+    public $conffile;
+    public $main_sql;
+    public $translation_sql;
+    public $devel_translation_sql;
+    public $ippf_sql;
+    public $icd9;
+    public $cvx;
+    public $additional_users;
+    public $dumpfiles;
+    public $error_message;
+    public $debug_message;
+    public $dbh;
+
     public function __construct($cgi_variables)
     {
         // Installation variables
@@ -40,7 +76,7 @@ class Installer
         $this->pass                     = isset($cgi_variables['pass']) ? ($cgi_variables['pass']) : '';
         $this->dbname                   = isset($cgi_variables['dbname']) ? ($cgi_variables['dbname']) : '';
         $this->collate                  = isset($cgi_variables['collate']) ? ($cgi_variables['collate']) : '';
-        $this->site                     = isset($cgi_variables['site']) ? ($cgi_variables['site']) : '';
+        $this->site                     = isset($cgi_variables['site']) ? ($cgi_variables['site']) : 'default'; // set to default if not set in order for install script to work correctly
         $this->source_site_id           = isset($cgi_variables['source_site_id']) ? ($cgi_variables['source_site_id']) : '';
         $this->clone_database           = isset($cgi_variables['clone_database']) ? ($cgi_variables['clone_database']) : '';
         $this->no_root_db_access        = isset($cgi_variables['no_root_db_access']) ? ($cgi_variables['no_root_db_access']) : ''; // no root access to database. user/privileges pre-configured
@@ -125,6 +161,16 @@ class Installer
         return true;
     }
 
+    public function iuname_is_valid()
+    {
+        if ($this->iuname == "" || !isset($this->iuname)) {
+            $this->error_message = "Initial user last name is invalid: '$this->iuname'";
+            return false;
+        }
+
+        return true;
+    }
+
     public function password_is_valid()
     {
         if ($this->pass == "" || !isset($this->pass)) {
@@ -151,7 +197,7 @@ class Installer
     {
         $this->dbh = $this->connect_to_database($this->server, $this->root, $this->rootpass, $this->port);
         if ($this->dbh) {
-            if (! $this->set_sql_strict()) {
+            if (!$this->set_sql_strict()) {
                 $this->error_message = 'unable to set strict sql setting';
                 return false;
             }
@@ -230,7 +276,15 @@ class Installer
             return $returnSql;
         } else {
             // the mysql user does not yet exist, so create the user
-            return $this->execute_sql("CREATE USER '" . $this->escapeSql($this->login) . "'@'" . $this->escapeSql($this->loginhost) . "' IDENTIFIED BY '" . $this->escapeSql($this->pass) . "'");
+            if (getenv('FORCE_DATABASE_X509_CONNECT', true) == 1) {
+                // this use case is to allow enforcement of x509 database connection use in applicable docker and kubernetes auto installations
+                return $this->execute_sql("CREATE USER '" . $this->escapeSql($this->login) . "'@'" . $this->escapeSql($this->loginhost) . "' IDENTIFIED BY '" . $this->escapeSql($this->pass) . "' REQUIRE X509");
+            } elseif (getenv('FORCE_DATABASE_SSL_CONNECT', true) == 1) {
+                // this use case is to allow enforcement of ssl database connection use in applicable docker and kubernetes auto installations
+                return $this->execute_sql("CREATE USER '" . $this->escapeSql($this->login) . "'@'" . $this->escapeSql($this->loginhost) . "' IDENTIFIED BY '" . $this->escapeSql($this->pass) . "' REQUIRE SSL");
+            } else {
+                return $this->execute_sql("CREATE USER '" . $this->escapeSql($this->login) . "'@'" . $this->escapeSql($this->loginhost) . "' IDENTIFIED BY '" . $this->escapeSql($this->pass) . "'");
+            }
         }
     }
 
@@ -384,8 +438,50 @@ class Installer
             }
         }
 
+        return true;
+    }
+
+    /**
+     * Handle the additional users now that our gacl's have finished installing.
+     * @return bool
+     */
+    public function install_additional_users()
+    {
         // Add the official openemr users (services)
         if ($this->load_file($this->additional_users, "Additional Official Users") == false) {
+            return false;
+        }
+        return true;
+    }
+
+    public function on_care_coordination()
+    {
+        $resource = $this->execute_sql("SELECT `mod_id` FROM `modules` WHERE `mod_name` = 'Carecoordination' LIMIT 1");
+        $resource_array = mysqli_fetch_array($resource, MYSQLI_ASSOC);
+        $modId = $resource_array['mod_id'];
+        if (empty($modId)) {
+            $this->error_message = "ERROR configuring Care Coordination module. Unable to get mod_id for Carecoordination module\n";
+            return false;
+        }
+
+        $resource = $this->execute_sql("SELECT `section_id` FROM `module_acl_sections` WHERE `section_identifier` = 'carecoordination' LIMIT 1");
+        $resource_array = mysqli_fetch_array($resource, MYSQLI_ASSOC);
+        $sectionId = $resource_array['section_id'];
+        if (empty($sectionId)) {
+            $this->error_message = "ERROR configuring Care Coordination module. Unable to get section_id for carecoordination module section\n";
+            return false;
+        }
+
+        $resource = $this->execute_sql("SELECT `id` FROM `gacl_aro_groups` WHERE `value` = 'admin' LIMIT 1");
+        $resource_array = mysqli_fetch_array($resource, MYSQLI_ASSOC);
+        $groupId = $resource_array['id'];
+        if (empty($groupId)) {
+            $this->error_message = "ERROR configuring Care Coordination module. Unable to get id for gacl_aro_groups admin section\n";
+            return false;
+        }
+
+        if ($this->execute_sql("INSERT INTO `module_acl_group_settings` (`module_id`, `group_id`, `section_id`, `allowed`) VALUES ('" . $this->escapeSql($modId) . "', '" . $this->escapeSql($groupId) . "', '" . $this->escapeSql($sectionId) . "', 1)") == false) {
+            $this->error_message = "ERROR configuring Care Coordination module. Unable to add the module_acl_group_settings acl entry\n";
             return false;
         }
 
@@ -394,6 +490,7 @@ class Installer
 
     /**
      * Generates the initial user's 2FA QR Code
+     * @deprecated Recommended to use get_initial_user_mfa_totp() instead
      * @return bool|string|void
      */
     public function get_initial_user_2fa_qr()
@@ -402,6 +499,19 @@ class Installer
             $adminTotp = new Totp($this->i2faSecret, $this->iuser);
             $qr = $adminTotp->generateQrCode();
             return $qr;
+        }
+        return false;
+    }
+
+    /**
+     * Generates the initial user's 2FA QR Code
+     * @return bool|string|void
+     */
+    public function get_initial_user_mfa_totp()
+    {
+        if (($this->i2faEnable) && (!empty($this->i2faSecret)) && (class_exists('Totp'))) {
+            $adminTotp = new Totp($this->i2faSecret, $this->iuser);
+            return $adminTotp;
         }
         return false;
     }
@@ -420,6 +530,10 @@ class Installer
                 $this->error_message = "unable to copy directory: '$source_directory' to '$destination_directory'. " . $this->error_message;
                 return false;
             }
+            // the new site will create it's own keys so okay to delete these copied from the source site
+            if (!$this->clone_database) {
+                array_map('unlink', glob($destination_directory . "/documents/logs_and_misc/methods/*"));
+            }
         }
 
         return true;
@@ -427,6 +541,9 @@ class Installer
 
     public function write_configuration_file()
     {
+        if (!file_exists($GLOBALS['OE_SITE_DIR'])) {
+            $this->create_site_directory();
+        }
         @touch($this->conffile); // php bug
         $fd = @fopen($this->conffile, 'w');
         if (! $fd) {
@@ -553,8 +670,8 @@ $config = 1; /////////////
         // xl('Menus')
         $gacl->add_object_section('Groups', 'groups', 10, 0, 'ACO');
         // xl('Groups')
-
-
+        $gacl->add_object_section('Inventory', 'inventory', 10, 0, 'ACO');
+        // xl('Inventory')
 
         // Create Accounting ACOs.
         //
@@ -589,8 +706,8 @@ $config = 1; /////////////
         // xl('Batch Communication Tool')
         $gacl->add_object('admin', 'Language Interface Tool', 'language', 10, 0, 'ACO');
         // xl('Language Interface Tool')
-        $gacl->add_object('admin', 'Pharmacy Dispensary', 'drugs', 10, 0, 'ACO');
-        // xl('Pharmacy Dispensary')
+        $gacl->add_object('admin', 'Inventory Administration', 'drugs', 10, 0, 'ACO');
+        // xl('Inventory Administration')
         $gacl->add_object('admin', 'ACL Administration', 'acl', 10, 0, 'ACO');
         // xl('ACL Administration')
         $gacl->add_object('admin', 'Multipledb', 'multipledb', 10, 0, 'ACO');
@@ -705,6 +822,25 @@ $config = 1; /////////////
         $gacl->add_object('nationnotes', 'Nation Notes Configure', 'nn_configure', 10, 0, 'ACO');
         // xl('Nation Notes Configure')
 
+        // Create ACOs for Inventory.
+        //
+        $gacl->add_object('inventory', 'Lots', 'lots', 10, 0, 'ACO');
+        // xl('Lots')
+        $gacl->add_object('inventory', 'Sales', 'sales', 20, 0, 'ACO');
+        // xl('Sales')
+        $gacl->add_object('inventory', 'Purchases', 'purchases', 30, 0, 'ACO');
+        // xl('Purchases')
+        $gacl->add_object('inventory', 'Transfers', 'transfers', 40, 0, 'ACO');
+        // xl('Transfers')
+        $gacl->add_object('inventory', 'Adjustments', 'adjustments', 50, 0, 'ACO');
+        // xl('Adjustments')
+        $gacl->add_object('inventory', 'Consumption', 'consumption', 60, 0, 'ACO');
+        // xl('Consumption')
+        $gacl->add_object('inventory', 'Destruction', 'destruction', 70, 0, 'ACO');
+        // xl('Destruction')
+        $gacl->add_object('inventory', 'Reporting', 'reporting', 80, 0, 'ACO');
+        // xl('Reporting')
+
         // Create ARO groups.
         //
         $users = $gacl->add_group('users', 'OpenEMR Users', 0, 'ARO');
@@ -751,6 +887,7 @@ $config = 1; /////////////
                 'acct' => array('bill', 'disc', 'eob', 'rep', 'rep_a'),
                 'admin' => array('calendar', 'database', 'forms', 'practice', 'superbill', 'users', 'batchcom', 'language', 'super', 'drugs', 'acl','multipledb','menu','manage_modules'),
                 'encounters' => array('auth_a', 'auth', 'coding_a', 'coding', 'notes_a', 'notes', 'date_a', 'relaxed'),
+                'inventory' => array('lots', 'sales', 'purchases', 'transfers', 'adjustments', 'consumption', 'destruction', 'reporting'),
                 'lists' => array('default','state','country','language','ethrace'),
                 'patients' => array('appt', 'demo', 'med', 'trans', 'docs', 'notes', 'sign', 'reminder', 'alert', 'disclosure', 'rx', 'amendment', 'lab', 'docs_rm','pat_rep'),
                 'sensitivities' => array('normal', 'high'),
@@ -884,9 +1021,9 @@ $config = 1; /////////////
         $gacl->add_acl(
             array(
                 'admin' => array('drugs'),
-                'encounters' => array('coding'),
+                'encounters' => array('auth', 'coding', 'notes'),
                 'patients' => array('appt'),
-                'groups' => array('gcalendar','glog')
+                'groups' => array('gcalendar', 'glog')
             ),
             null,
             array($clin),
@@ -903,7 +1040,7 @@ $config = 1; /////////////
         //
         $gacl->add_acl(
             array(
-                'patients' => array('alert','pat_rep')
+                'patients' => array('alert')
             ),
             null,
             array($front),
@@ -945,7 +1082,7 @@ $config = 1; /////////////
         // xl('Things that front office can read and partly modify')
         $gacl->add_acl(
             array(
-                'patients' => array('appt', 'demo', 'trans', 'notes'),
+                'patients' => array('appt', 'demo'),
                 'groups' => array('gcalendar')
             ),
             null,
@@ -963,7 +1100,7 @@ $config = 1; /////////////
         //
         $gacl->add_acl(
             array(
-                'patients' => array('alert','pat_rep')
+                'patients' => array('alert')
             ),
             null,
             array($back),
@@ -1028,6 +1165,7 @@ $config = 1; /////////////
                 'acct' => array('bill', 'disc', 'eob', 'rep', 'rep_a'),
                 'admin' => array('calendar', 'database', 'forms', 'practice', 'superbill', 'users', 'batchcom', 'language', 'super', 'drugs', 'acl','multipledb','menu','manage_modules'),
                 'encounters' => array('auth_a', 'auth', 'coding_a', 'coding', 'notes_a', 'notes', 'date_a', 'relaxed'),
+                'inventory' => array('lots', 'sales', 'purchases', 'transfers', 'adjustments', 'consumption', 'destruction', 'reporting'),
                 'lists' => array('default','state','country','language','ethrace'),
                 'patients' => array('appt', 'demo', 'med', 'trans', 'docs', 'notes', 'sign', 'reminder', 'alert', 'disclosure', 'rx', 'amendment', 'lab', 'docs_rm','pat_rep'),
                 'sensitivities' => array('normal', 'high'),
@@ -1098,7 +1236,15 @@ $config = 1; /////////////
             $this->disconnect();
             // Using @ in below call to hide the php warning in cases where the
             //  below connection does not work, which is expected behavior.
-            if (! @$this->user_database_connection()) {
+            // Using try in below call to catch the mysqli exception when the
+            //  below connection does not work, which is expected behavior (needed to
+            //  add this try/catch clause for PHP 8.1).
+            try {
+                $checkUserDatabaseConnection = @$this->user_database_connection();
+            } catch (Exception $e) {
+                $checkUserDatabaseConnection = false;
+            }
+            if (! $checkUserDatabaseConnection) {
                 // Re-connect to mysql via root user
                 if (! $this->root_database_connection()) {
                     return false;
@@ -1157,6 +1303,14 @@ $config = 1; /////////////
             if (! $this->install_gacl()) {
                 return false;
             }
+
+            if (! $this->install_additional_users()) {
+                return false;
+            }
+
+            if (! $this->on_care_coordination()) {
+                return false;
+            }
         }
 
         return true;
@@ -1208,10 +1362,10 @@ $config = 1; /////////////
     private function connect_to_database($server, $user, $password, $port, $dbname = '')
     {
         $pathToCerts = __DIR__ . "/../../sites/" . $this->site . "/documents/certificates/";
-        $clientFlag = null;
+        $mysqlSsl = false;
         $mysqli = mysqli_init();
         if (defined('MYSQLI_CLIENT_SSL') && file_exists($pathToCerts . "mysql-ca")) {
-            $clientFlag = MYSQLI_CLIENT_SSL;
+            $mysqlSsl = true;
             if (
                 file_exists($pathToCerts . "mysql-key") &&
                 file_exists($pathToCerts . "mysql-cert")
@@ -1237,7 +1391,17 @@ $config = 1; /////////////
                 );
             }
         }
-        if (! mysqli_real_connect($mysqli, $server, $user, $password, $dbname, (int)$port != 0 ? (int)$port : 3306, '', $clientFlag)) {
+        try {
+            if ($mysqlSsl) {
+                $ok = mysqli_real_connect($mysqli, $server, $user, $password, $dbname, (int)$port != 0 ? (int)$port : 3306, '', MYSQLI_CLIENT_SSL);
+            } else {
+                $ok = mysqli_real_connect($mysqli, $server, $user, $password, $dbname, (int)$port != 0 ? (int)$port : 3306);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $this->error_message = "unable to connect to sql server because of mysql error: " . $e->getMessage();
+            return false;
+        }
+        if (!$ok) {
             $this->error_message = 'unable to connect to sql server because of: (' . mysqli_connect_errno() . ') ' . mysqli_connect_error();
             return false;
         }
@@ -1347,10 +1511,11 @@ $config = 1; /////////////
         $cmd = "mysqldump -u " . escapeshellarg($login) .
         " -h " . $host .
         " -p" . escapeshellarg($pass) .
-        " --opt --skip-extended-insert --quote-names -r $backup_file " .
+        " --ignore-table=" . escapeshellarg($dbase . ".onsite_activity_view") . " --hex-blob --opt --skip-extended-insert --quote-names -r $backup_file " .
         escapeshellarg($dbase);
 
-        $tmp0 = exec($cmd, $tmp1 = array(), $tmp2);
+        $tmp1 = [];
+        $tmp0 = exec($cmd, $tmp1, $tmp2);
         if ($tmp2) {
             die("Error $tmp2 running \"$cmd\": $tmp0 " . implode(' ', $tmp1));
         }
@@ -1376,12 +1541,16 @@ $config = 1; /////////////
     {
         $current_theme =  $this->execute_sql("SELECT gl_value FROM globals WHERE gl_name LIKE '%css_header%'");
         $current_theme = mysqli_fetch_array($current_theme);
-        return $current_theme [0];
+        return $current_theme[0];
     }
 
     public function setCurrentTheme()
     {
-        $this->getCurrentTheme();//why is this needed ?
+        $current_theme = $this->getCurrentTheme();
+        // for cloned sites since they're not asked about a new theme
+        if (!$this->new_theme) {
+            $this->new_theme = $current_theme;
+        }
         return $this->execute_sql("UPDATE globals SET gl_value='" . $this->escapeSql($this->new_theme) . "' WHERE gl_name LIKE '%css_header%'");
     }
 
@@ -1418,12 +1587,10 @@ $config = 1; /////////////
             $theme_file_path = $img_path . $theme_file_name;
             $div_start = "                      <div class='row'>";
             $div_end = "                      </div>";
-            $img_div = <<<FDIV
-                                        <div class="col-sm-2 checkboxgroup">
-                                            <label for="my_radio_button_id{$id}"><img height="160px" src="{$theme_file_path}" width="100%"></label>
-                                            <p class="m-0">{$theme_title}</p><input id="my_radio_button_id{$id}" name="stylesheet" type="radio" value="{$theme_value}">
-                                        </div>
-FDIV;
+            $img_div = "                <div class='col-sm-2 checkboxgroup'>
+                                            <label for='my_radio_button_id" . attr($id) . "'><img height='160px' src='" . attr($theme_file_path) . "' width='100%'></label>
+                                            <p class='m-0'>" . text($theme_title) . "</p><input id='my_radio_button_id" . attr($id) . "' name='stylesheet' type='radio' value='" . attr($theme_value) . "'>
+                                        </div>";
             $theme_img_number = $i % 6; //to ensure that last file in array will always generate 5 and will end the row
             switch ($theme_img_number) {
                 case 0: //start row
@@ -1481,6 +1648,10 @@ DSTD;
 
     public function displayNewThemeDiv()
     {
+        // cloned sites don't get a chance to set a new theme
+        if (!$this->new_theme) {
+            $this->new_theme = $this->getCurrentTheme();
+        }
         $theme_file_name = $this->new_theme;
         $arr_extracted_file_name = $this->extractFileName($theme_file_name);
         $theme_value = $arr_extracted_file_name['theme_value'];

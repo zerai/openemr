@@ -5,7 +5,7 @@
  * @author Rod Roark <rod@sunsetsystems.com>
  * @author Stephen Waite <stephen.waite@cmsvt.com>
  * @copyright Copyright (c) 2005-2020 Rod Roark <rod@sunsetsystems.com>
- * @copyright Copyright (c) 2018-2019 Stephen Waite <stephen.waite@cmsvt.com>
+ * @copyright Copyright (c) 2018-2021 Stephen Waite <stephen.waite@cmsvt.com>
  * @link https://www.open-emr.org
  * @license https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
@@ -67,7 +67,10 @@ class InvoiceSummary
                 $code .= ':' . $row['modifier'];
             }
 
+            $codes[$code]['chg'] = $codes[$code]['chg'] ?? null;
             $codes[$code]['chg'] += $amount;
+
+            $codes[$code]['bal'] = $codes[$code]['bal'] ?? null;
             $codes[$code]['bal'] += $amount;
 
             // Pass the code type, code and code_text fields
@@ -80,7 +83,7 @@ class InvoiceSummary
 
             // Add the details if they want 'em.
             if ($with_detail) {
-                if (!$codes[$code]['dtl']) {
+                if (empty($codes[$code]['dtl'])) {
                     $codes[$code]['dtl'] = array();
                 }
 
@@ -128,7 +131,7 @@ class InvoiceSummary
         $res = sqlStatement("SELECT " .
             "a.code_type, a.code, a.modifier, a.memo, a.payer_type, a.adj_amount, a.pay_amount, a.reason_code, " .
             "a.post_time, a.session_id, a.sequence_no, a.account_code, a.follow_up_note, " .
-            "s.payer_id, s.reference, s.check_date, s.deposit_date " .
+            "s.payer_id, s.reference, s.check_date, s.deposit_date, s.payment_method " .
             ",i.name " .
             "FROM ar_activity AS a " .
             "LEFT OUTER JOIN ar_session AS s ON s.session_id = a.session_id " .
@@ -138,17 +141,26 @@ class InvoiceSummary
         while ($row = sqlFetchArray($res)) {
             $code = $row['code'];
             if (!$code) {
-                $code = "Unknown";
+                if ($row['account_code'] == "PCP") {
+                    $code = "Copay";
+                } else {
+                    $code = "Claim level";
+                }
             }
 
             if ($row['modifier']) {
                 $code .= ':' . $row['modifier'];
             }
 
-            $ins_id = 0 + $row['payer_id'];
+            $ins_id = (int) $row['payer_id'];
+            $codes[$code]['bal'] = $codes[$code]['bal'] ?? null;
             $codes[$code]['bal'] -= $row['pay_amount'];
             $codes[$code]['bal'] -= $row['adj_amount'];
+
+            $codes[$code]['chg'] = $codes[$code]['chg'] ?? null;
             $codes[$code]['chg'] -= $row['adj_amount'];
+
+            $codes[$code]['adj'] = $codes[$code]['adj'] ?? null;
             $codes[$code]['adj'] += $row['adj_amount'];
             if ($ins_id) {
                 $codes[$code]['ins'] = $ins_id;
@@ -156,7 +168,7 @@ class InvoiceSummary
 
             // Add the details if they want 'em.
             if ($with_detail) {
-                if (!$codes[$code]['dtl']) {
+                if (!($codes[$code]['dtl'] ?? '')) {
                     $codes[$code]['dtl'] = array();
                 }
 
@@ -164,6 +176,10 @@ class InvoiceSummary
                 $paydate = empty($row['deposit_date']) ? substr($row['post_time'], 0, 10) : $row['deposit_date'];
                 if ($row['pay_amount'] != 0) {
                     $tmp['pmt'] = $row['pay_amount'];
+                    $tmp['pmt_method'] = $row['payment_method'];
+                } else {
+                    $tmp['pmt'] = 0;
+                    $tmp['pmt_method'] = '';
                 }
 
                 if (isset($row['reason_code'])) {
@@ -174,9 +190,9 @@ class InvoiceSummary
                     $tmp['chg'] = 0 - $row['adj_amount'];
                     $row['memo'] = (!empty($row['follow_up_note']) && empty($row['memo'])) ? (xlt("Payment note") . ": " . trim($row['follow_up_note'])) : $row['memo'];
                     $tmp['rsn'] = empty($row['memo']) ? 'Unknown adjustment' : $row['memo'];
-                    $tmp['rsn'] = str_replace("Ins1", $ins_data['primary'], $tmp['rsn']);
-                    $tmp['rsn'] = str_replace("Ins2", $ins_data['secondary'], $tmp['rsn']);
-                    $tmp['rsn'] = str_replace("Ins3", $ins_data['tertiary'], $tmp['rsn']);
+                    $tmp['rsn'] = str_replace("Ins1", ($ins_data['primary'] ?? ''), $tmp['rsn']);
+                    $tmp['rsn'] = str_replace("Ins2", ($ins_data['secondary'] ?? ''), $tmp['rsn']);
+                    $tmp['rsn'] = str_replace("Ins3", ($ins_data['tertiary'] ?? ''), $tmp['rsn']);
                     $tmpkey = $paydate . $keysuff1++;
                 } else {
                     $tmpkey = $paydate . $keysuff2++;
@@ -189,7 +205,7 @@ class InvoiceSummary
                     $tmp['src'] = empty($row['session_id']) ? $row['memo'] : $row['reference'];
                 }
 
-                $tmp['insurance_company'] = substr($row['name'], 0, 10);
+                $tmp['insurance_company'] = substr(($row['name'] ?? ''), 0, 10);
                 if ($ins_id) {
                     $tmp['ins'] = $ins_id;
                 }
@@ -234,7 +250,7 @@ class InvoiceSummary
             $balance += $cdata['bal'];
         }
 
-        if ($balance > 0) {
+        if (number_format($balance, 2) > 0) {
             return 0;
         }
 

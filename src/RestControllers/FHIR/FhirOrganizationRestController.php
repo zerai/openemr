@@ -2,11 +2,17 @@
 
 namespace OpenEMR\RestControllers\FHIR;
 
+use OpenEMR\FHIR\R4\FHIRDomainResource\FHIROrganization;
+use OpenEMR\FHIR\R4\FHIRElement\FHIRAddress;
+use OpenEMR\FHIR\R4\FHIRElement\FHIRContactPoint;
+use OpenEMR\FHIR\R4\FHIRElement\FHIRIdentifier;
+use OpenEMR\FHIR\R4\FHIRElement\FHIRPeriod;
 use OpenEMR\Services\FHIR\FhirValidationService;
 use OpenEMR\Services\FHIR\FhirOrganizationService;
 use OpenEMR\Services\FHIR\FhirResourcesService;
 use OpenEMR\RestControllers\RestControllerHelper;
 use OpenEMR\FHIR\R4\FHIRResource\FHIRBundle\FHIRBundleEntry;
+use OpenEMR\Services\FHIR\Serialization\FhirOrganizationSerializer;
 use OpenEMR\Validators\ProcessingResult;
 
 require_once(__DIR__ . '/../../../_rest_config.php');
@@ -23,6 +29,9 @@ require_once(__DIR__ . '/../../../_rest_config.php');
  */
 class FhirOrganizationRestController
 {
+    /**
+     * @var FhirOrganizationService
+     */
     private $fhirOrganizationService;
     private $fhirService;
     private $fhirValidationService;
@@ -51,9 +60,10 @@ class FhirOrganizationRestController
     {
         $processingResult = $this->fhirOrganizationService->getAll($searchParams);
         $bundleEntries = array();
+        // TODO: adunsulag why isn't this work done in the fhirService->createBundle?
         foreach ($processingResult->getData() as $index => $searchResult) {
             $bundleEntry = [
-                'fullUrl' =>  \RestConfig::$REST_FULL_URL . '/' . $searchResult->getId(),
+                'fullUrl' =>  $GLOBALS['site_addr_oath'] . ($_SERVER['REDIRECT_URL'] ?? '') . '/' . $searchResult->getId(),
                 'resource' => $searchResult
             ];
             $fhirBundleEntry = new FHIRBundleEntry($bundleEntry);
@@ -70,10 +80,10 @@ class FhirOrganizationRestController
      * @param $fhirId The FHIR organization resource id (uuid)
      * @returns 200 if the operation completes successfully
      */
-    public function getOne($fhirId)
+    public function getOne($fhirId, $puuidBind = null)
     {
-        $processingResult = $this->fhirOrganizationService->getOne($fhirId, true);
-        return RestControllerHelper::handleProcessingResult($processingResult, 200);
+        $processingResult = $this->fhirOrganizationService->getOne($fhirId, $puuidBind);
+        return RestControllerHelper::handleFhirProcessingResult($processingResult, 200);
     }
 
     /**
@@ -88,8 +98,9 @@ class FhirOrganizationRestController
             return RestControllerHelper::responseHandler($fhirValidationService, null, 400);
         }
 
-        $processingResult = $this->fhirOrganizationService->insert($fhirJson);
-        return RestControllerHelper::handleProcessingResult($processingResult, 201);
+        $organization = $this->createOrganizationFromJSON($fhirJson);
+        $processingResult = $this->fhirOrganizationService->insert($organization);
+        return RestControllerHelper::handleFhirProcessingResult($processingResult, 201);
     }
 
     /**
@@ -105,7 +116,13 @@ class FhirOrganizationRestController
             return RestControllerHelper::responseHandler($fhirValidationService, null, 400);
         }
 
-        $processingResult = $this->fhirOrganizationService->update($fhirId, $fhirJson);
-        return RestControllerHelper::handleProcessingResult($processingResult, 200);
+        $organization = $this->createOrganizationFromJSON($fhirJson);
+        $processingResult = $this->fhirOrganizationService->update($fhirId, $organization);
+        return RestControllerHelper::handleFhirProcessingResult($processingResult, 200);
+    }
+
+    private function createOrganizationFromJSON($fhirJson)
+    {
+        return FhirOrganizationSerializer::deserialize($fhirJson);
     }
 }

@@ -20,21 +20,21 @@
  */
 
 require_once("../globals.php");
-require_once("$srcdir/patient.inc");
-require_once("$srcdir/forms.inc");
+require_once("$srcdir/patient.inc.php");
+require_once("$srcdir/forms.inc.php");
 require_once("../../custom/code_types.inc.php");
-require_once "$srcdir/user.inc";
+require_once "$srcdir/user.inc.php";
 require_once("$srcdir/payment.inc.php");
 
 use OpenEMR\Billing\InvoiceSummary;
 use OpenEMR\Billing\SLEOB;
 use OpenEMR\Common\Csrf\CsrfUtils;
-use OpenEMR\Common\Logging\EventAuditLogger;
+use OpenEMR\Common\Utils\FormatMoney;
 use OpenEMR\Core\Header;
 
 $debug = 0; // set to 1 for debugging mode
-$save_stay = $_REQUEST['form_save'] == '1' ? true : false;
-$from_posting = (0 + $_REQUEST['isPosting']) ? 1 : 0;
+$save_stay = (!empty($_REQUEST['form_save']) && ($_REQUEST['form_save'] == '1')) ? true : false;
+$from_posting = (0 + ($_REQUEST['isPosting'] ?? null)) ? 1 : 0;
 $g_posting_adj_disable = $GLOBALS['posting_adj_disable'] ? 'checked' : '';
 if ($from_posting) {
     $posting_adj_disable = prevSetting('sl_eob_search.', 'posting_adj_disable', 'posting_adj_disable', $g_posting_adj_disable);
@@ -46,15 +46,6 @@ if ($from_posting) {
 $ALLOW_DELETE = true;
 
 $info_msg = "";
-
-// Format money for display.
-//
-function bucks($amount)
-{
-    if ($amount) {
-        return sprintf("%.2f", $amount);
-    }
-}
 
 ?>
 <html>
@@ -69,10 +60,10 @@ function bucks($amount)
             return true;
         }
 
-        function goEncounterSummary(pid) {
+        function goEncounterSummary(e, pid) {
             if(pid) {
                 if(typeof opener.toEncSummary  === 'function') {
-                    opener.toEncSummary(pid);
+                    opener.toEncSummary(e, pid);
                 }
             }
             doClose();
@@ -271,7 +262,7 @@ function bucks($amount)
 </head>
 <body>
 <?php
-$trans_id = 0 + $_GET['id'];
+$trans_id = (int) $_GET['id'];
 if (!$trans_id) {
     die(xlt("You cannot access this page directly."));
 }
@@ -281,23 +272,22 @@ $ferow = sqlQuery("SELECT e.*, p.fname, p.mname, p.lname FROM form_encounter AS 
 if (empty($ferow)) {
     die("There is no encounter with form_encounter.id = '" . text($trans_id) . "'.");
 }
-$patient_id = 0 + $ferow['pid'];
-$encounter_id = 0 + $ferow['encounter'];
+$patient_id = (int) $ferow['pid'];
+$encounter_id = (int) $ferow['encounter'];
 $svcdate = substr($ferow['date'], 0, 10);
-$form_payer_id = ($_POST['form_payer_id']) ? (0 + $_POST['form_payer_id']) : 0;
-$form_reference = $_POST['form_reference'];
-$form_check_date   = fixDate($_POST['form_check_date'], date('Y-m-d'));
-$form_deposit_date = fixDate($_POST['form_deposit_date'], $form_check_date);
-$form_pay_total = ($_POST['form_pay_total']) ? (0 + $_POST['form_pay_total']) : 0;
-
+$form_payer_id = (!empty($_POST['form_payer_id'])) ? (0 + $_POST['form_payer_id']) : 0;
+$form_reference = $_POST['form_reference'] ?? null;
+$form_check_date   = fixDate(($_POST['form_check_date'] ?? ''), date('Y-m-d'));
+$form_deposit_date = fixDate(($_POST['form_deposit_date'] ?? ''), $form_check_date);
+$form_pay_total = (!empty($_POST['form_pay_total'])) ? (0 + $_POST['form_pay_total']) : 0;
 
 $payer_type = 0;
-if (preg_match('/^Ins(\d)/i', $_POST['form_insurance'], $matches)) {
+if (preg_match('/^Ins(\d)/i', ($_POST['form_insurance'] ?? ''), $matches)) {
     $payer_type = $matches[1];
 }
 
-if ($_POST['form_save'] || $_POST['form_cancel'] || $_POST['isLastClosed']) {
-    if ($_POST['form_save']) {
+if (!empty($_POST['form_save']) || !empty($_POST['form_cancel']) || !empty($_POST['isLastClosed']) || !empty($_POST['billing_note'])) {
+    if (!empty($_POST['form_save'])) {
         if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
             CsrfUtils::csrfNotVerified();
         }
@@ -316,7 +306,7 @@ if ($_POST['form_save'] || $_POST['form_cancel'] || $_POST['isLastClosed']) {
 
 // Handle deletes. row_delete() is borrowed from deleter.php.
         if ($ALLOW_DELETE && !$debug) {
-            if (is_array($_POST['form_del'])) {
+            if (!empty($_POST['form_del']) && is_array($_POST['form_del'])) {
                 foreach ($_POST['form_del'] as $arseq => $dummy) {
                     row_modify(
                         "ar_activity",
@@ -408,7 +398,7 @@ if ($_POST['form_save'] || $_POST['form_cancel'] || $_POST['isLastClosed']) {
         $form_stmt_count = 0 + $_POST['form_stmt_count'];
         sqlStatement("UPDATE form_encounter SET last_level_closed = ?, stmt_count = ? WHERE pid = ? AND encounter = ?", array($form_done, $form_stmt_count, $patient_id, $encounter_id));
 
-        if ($_POST['form_secondary']) {
+        if (!empty($_POST['form_secondary'])) {
             SLEOB::arSetupSecondary($patient_id, $encounter_id, $debug);
         }
         echo "<script>\n";
@@ -427,13 +417,24 @@ if ($_POST['form_save'] || $_POST['form_cancel'] || $_POST['isLastClosed']) {
     if (!$debug && !$save_stay && !$_POST['isLastClosed']) {
         echo "doClose();\n";
     }
-    if (!$debug && ($save_stay || $_POST['isLastClosed'])) {
+    if (!$debug && ($save_stay || $_POST['isLastClosed'] || $_POST['billing_note'])) {
         if ($_POST['isLastClosed']) {
             // save last closed level
             $form_done = 0 + $_POST['form_done'];
             $form_stmt_count = 0 + $_POST['form_stmt_count'];
             sqlStatement("UPDATE form_encounter SET last_level_closed = ?, stmt_count = ? WHERE pid = ? AND encounter = ?", array($form_done, $form_stmt_count, $patient_id, $encounter_id));
+            // also update billing for aging
+            sqlStatement("UPDATE billing SET bill_date = ? WHERE pid = ? AND encounter = ?", array($form_deposit_date, $patient_id, $encounter_id));
+            if (!empty($_POST['form_secondary'])) {
+                SLEOB::arSetupSecondary($patient_id, $encounter_id, $debug);
+            }
         }
+
+        if ($_POST['billing_note']) {
+            // save last closed level
+            sqlStatement("UPDATE form_encounter SET billing_note = ? WHERE pid = ? AND encounter = ?", array($_POST['billing_note'], $patient_id, $encounter_id));
+        }
+
         // will reload page w/o reposting
         echo "location.replace(location)\n";
     }
@@ -446,6 +447,7 @@ if ($_POST['form_save'] || $_POST['form_cancel'] || $_POST['isLastClosed']) {
 // Get invoice charge details.
 $codes = InvoiceSummary::arGetInvoiceSummary($patient_id, $encounter_id, true);
 $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1", array($patient_id));
+$bnrow = sqlQuery("select billing_note from form_encounter where pid = ? AND encounter = ? limit 1", array($patient_id, $encounter_id));
 ?>
 
 <div class="container-fluid">
@@ -476,7 +478,7 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                         $tmp = sqlQuery("SELECT bill_date FROM billing WHERE " .
                             "pid = ? AND encounter = ? AND " .
                             "activity = 1 ORDER BY fee DESC, id ASC LIMIT 1", array($patient_id, $encounter_id));
-                        $billdate = substr(($tmp['bill_date'] . "Not Billed"), 0, 10);
+                        $billdate = substr(($tmp['bill_date'] ?? '' . "Not Billed"), 0, 10);
                         ?>
                         <input type="text" class="form-control" id='form_provider'
                                name='form_provider' value="<?php echo attr($provider); ?>" disabled />
@@ -484,7 +486,7 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                     <div class="form-group col-lg">
                         <label class="col-form-label" for="form_invoice"><?php echo xlt('Invoice'); ?>:</label>
                         <input type="text" class="form-control" id='form_provider'
-                               name='form_provider' value='<?php echo attr($patient_id) . "." . attr($encounter_id); ?>'
+                               name='form_provider' value='<?php echo attr($patient_id) . "-" . attr($encounter_id); ?>'
                                disabled />
                     </div>
                     <div class="form-group col-lg">
@@ -505,8 +507,11 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                         ?>
                     </div>
                 </div>
-                <div class="form-group mt-3">
-                     <textarea name="insurance_name" id="insurance_name" class="form-control" cols="5" rows="2" readonly><?php echo attr($insurance); ?></textarea>
+                <div class="form-row">
+                    <div class="form-group col-lg">
+                        <label class="col-form-label" for="billing_note"><?php echo xlt('Billing Note'); ?>:</label>
+                        <textarea name="billing_note" id="billing_note" class="form-control" cols="5" rows="2"><?php echo text(($pdrow['billing_note'] ?? '')) . "\n" . text(($bnrow['billing_note'] ?? '')); ?></textarea>
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group col-lg">
@@ -562,7 +567,7 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                             <?php
                             // TBD: I think the following is unused and can be removed.
                             ?>
-                            <input name='form_eobs' type='hidden' value='<?php echo attr($arrow['shipvia']) ?>'/>
+                            <input name='form_eobs' type='hidden' value='<?php echo attr($arrow['shipvia'] ?? '') ?>'/>
                         </div>
                     </div>
                     <div class="form-group col-lg" id='ins_done'>
@@ -604,8 +609,8 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                         <thead>
                             <tr>
                                 <th><?php echo xlt('Code') ?></th>
-                                <th class="text-right"><?php echo xlt('Charge') ?></th>
-                                <th class="text-right"><?php echo xlt('Balance') ?>&nbsp;</th>
+                                <th class="text-left"><?php echo xlt('Charge') ?></th>
+                                <th class="text-left"><?php echo xlt('Balance') ?>&nbsp;</th>
                                 <th><?php echo xlt('By/Source') ?></th>
                                 <th><?php echo xlt('Date') ?></th>
                                 <th><?php echo xlt('Pay') ?></th>
@@ -640,7 +645,7 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                                 }
                                 $tmpchg = "";
                                 $tmpadj = "";
-                                if ($ddata['chg'] != 0) {
+                                if (!empty($ddata['chg']) && ($ddata['chg'] != 0)) {
                                     if (isset($ddata['rsn'])) {
                                         $tmpadj = 0 - $ddata['chg'];
                                     } else {
@@ -650,7 +655,7 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                                 ?>
                                 <tr>
                                     <td class="detail" style="background:<?php echo $dispcode ? 'lightyellow' : ''; ?>"><?php echo text($dispcode); $dispcode = "" ?></td>
-                                    <td class="detail"><?php echo text(bucks($tmpchg)); ?></td>
+                                    <td class="detail"><?php echo text(FormatMoney::getBucks($tmpchg)); ?></td>
                                     <td class="detail">&nbsp;</td>
                                     <td class="detail">
                                         <?php
@@ -661,14 +666,14 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                                                 echo 'Ins' . text($ddata['plv']) . '/';
                                             }
                                         }
-                                        echo text($ddata['src']);
+                                        echo text($ddata['src'] ?? '');
                                         ?>
                                     </td>
                                     <td class="detail"><?php echo text($ddate); ?></td>
-                                    <td class="detail"><?php echo text(bucks($ddata['pmt'])); ?></td>
-                                    <td class="detail"><?php echo text(bucks($tmpadj)); ?></td>
+                                    <td class="detail"><?php echo text(FormatMoney::getBucks($ddata['pmt'] ?? '')); ?></td>
+                                    <td class="detail"><?php echo text(FormatMoney::getBucks($tmpadj ?? '')); ?></td>
                                     <td class="detail">&nbsp;</td>
-                                    <td class="detail"><?php echo text($ddata['rsn']); ?></td>
+                                    <td class="detail"><?php echo text($ddata['rsn'] ?? ''); ?></td>
                                     <?php
                                     if ($ALLOW_DELETE) { ?>
                                         <td class="detail">
@@ -692,11 +697,11 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                                 <td class="last_detail">&nbsp;</td>
                                 <td class="last_detail">
                                     <input name="form_line[<?php echo attr($code); ?>][bal]" type="hidden"
-                                           value="<?php echo attr(bucks($cdata['bal'])); ?>" />
+                                           value="<?php echo attr(FormatMoney::getBucks($cdata['bal'] ?? '')); ?>" />
                                     <input name="form_line[<?php echo attr($code); ?>][ins]" type="hidden"
-                                           value="<?php echo attr($cdata['ins']); ?>" />
+                                           value="<?php echo attr($cdata['ins'] ?? ''); ?>" />
                                     <input name="form_line[<?php echo attr($code); ?>][code_type]" type="hidden"
-                                           value="<?php echo attr($cdata['code_type']); ?>" /> <?php echo text(sprintf("%.2f", $cdata['bal'])); ?>
+                                           value="<?php echo attr($cdata['code_type'] ?? ''); ?>" /> <?php echo text(FormatMoney::getBucks($cdata['bal'], true)); ?>
                                     &nbsp;
                                 </td>
                                 <td class="last_detail"></td>
@@ -710,7 +715,7 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                                 <td class="last_detail">
                                     <input name="form_line[<?php echo attr($code); ?>][adj]" size="10" type="text"
                                            class="form-control"
-                                           value='<?php echo attr($totalAdjAmount ? $totalAdjAmount : '0.00'); ?>'
+                                           value='<?php echo attr((!empty($totalAdjAmount)) ? $totalAdjAmount : '0.00'); ?>'
                                            onclick="this.select()" />
                                 </td>
                                 <td class="last_detail text-center">
@@ -759,7 +764,7 @@ $pdrow = sqlQuery("select billing_note from patient_data where pid = ? limit 1",
                     </div>
                     <?php if ($from_posting) { ?>
                         <button type='button' class="btn btn-secondary btn-view float-right" name='form_goto' id="btn-goto"
-                            onclick="goEncounterSummary(<?php echo attr_js($patient_id) ?>)"><?php echo xlt("Past Encounters"); ?></button>
+                            onclick="goEncounterSummary(event, <?php echo attr_js($patient_id) ?>)"><?php echo xlt("Past Encounters"); ?></button>
                     <?php } ?>
                 </div>
             </div>

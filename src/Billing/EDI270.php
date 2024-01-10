@@ -16,7 +16,7 @@
  * @copyright Copyright (c) 2016 Terry Hill <terry@lillysystems.com>
  * @copyright Copyright (c) 2017 Brady Miller <brady.g.miller@gmail.com>
  * @copyright Copyright (c) 2019 Jerry Padgett <sjpadgett@gmail.com>
- * @copyright Copyright (c) 2019 Stephen Waite <stephen.waite@cmsvt.com>
+ * @copyright Copyright (c) 2019-2023 Stephen Waite <stephen.waite@cmsvt.com>
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
@@ -25,6 +25,7 @@ namespace OpenEMR\Billing;
 require_once(dirname(__FILE__) . "/../../library/edihistory/codes/edih_271_code_class.php");
 
 use edih_271_codes;
+use OpenEMR\Billing\BillingProcessor\BillingClaimBatchControlNumber;
 use OpenEMR\Common\Http\oeHttp;
 use OpenEMR\Common\Utils\RandomGenUtils;
 
@@ -61,7 +62,7 @@ class EDI270
         $ISA[10] = str_pad(date('Hi'), 4, " ");       // Interchange Time (HHMM)
         $ISA[11] = "^";                                 // Interchange Control Standards Identifier
         $ISA[12] = str_pad("00501", 5, " ");          // Interchange Control Version Number
-        $ISA[13] = str_pad("000000001", 9, " ");      // INTERCHANGE CONTROL NUMBER
+        $ISA[13] = BillingClaimBatchControlNumber::getIsa13();      // INTERCHANGE CONTROL NUMBER
         $ISA[14] = str_pad($X12info['x12_isa14'], 1, " ");              // Acknowledgment Request [0= not requested, 1= requested]
         $ISA[15] = str_pad($X12info['x12_isa15'], 1, " ");                 // Usage Indicator [ P = Production Data, T = Test Data ]
         $ISA['Created'] = implode('*', $ISA);       // Data Element Separator
@@ -81,7 +82,7 @@ class EDI270
         $GS[3] = $X12info['x12_receiver_id'];              // Application Receiver's ID
         $GS[4] = date('Ymd');               // Date [CCYYMMDD]
         $GS[5] = date('His');               // Time [HHMM] Group Creation Time
-        $GS[6] = "2";                       // Group Control Number No zeros for 5010
+        $GS[6] = BillingClaimBatchControlNumber::getGs06(); // Group Control Number No zeros for 5010
         $GS[7] = "X";                   // Responsible Agency Code Accredited Standards Committee X12 ]
         $GS[8] = "005010X279A1";            // Version Release / Industry[ Identifier Code Query 005010X279A1
         $GS['Created'] = implode('*', $GS);         // Data Element Separator
@@ -158,7 +159,7 @@ class EDI270
             $NM1[6] = "";                       // Data Element not required.
             $NM1[7] = "";                       // Data Element not required.
             $NM1[8] = "PI";                     // 5010 no longer uses "46"
-            if ($GLOBALS['enable_oa']) {
+            if ($GLOBALS['enable_eligibility_requests']) {
                 $payerId = $row['eligibility_id'];
             } else {
                 $payerId = $row['cms_id'];
@@ -429,6 +430,9 @@ class EDI270
         $res = sqlStatement($query, array($pid));
 
         $details = self::requestRealTimeEligible($res, '', "~", ':', true);
+        if ($details === false) {
+            $details = "Error: Nothing returned from X12 Partner.";
+        }
         $isError = strpos($details, "Error:");
         $isError = $isError !== false ? $isError : strpos($details, "AAA");
         if ($isError !== false) {
@@ -445,14 +449,18 @@ class EDI270
     public static function requestRealTimeEligible($res, $X12info, $segTer, $compEleSep, $eFlag = false)
     {
         $rowCount = 0;
-        $totalCount = count($res);
+        if (is_countable($res)) {
+            $totalCount = count($res);
+        } else {
+            return false;
+        }
         $down_accum = $log = $error_accum = '';
         foreach ($res as $row) {
             if (!$X12info) {
                 $X12info = self::getX12Partner($row['partner']);
             }
             if ($row['providerID'] === 0 || !$row['provider_npi']) {
-                $error_accum .= xlt("Error") . ": " . xlt("Provider Missing Add one in Choices") . "\n";
+                $error_accum .= xlt("Error") . ": " . xlt("Provider Missing NPI or Provider not selected in choices") . "\n";
             }
             if (!$row['eligibility_id']) {
                 $error_accum .= xlt("Error") . ": " . xlt("Missing Insurance Payer Id") . "\n";
@@ -765,15 +773,6 @@ class EDI270
         return $returnval;
     }
 
-// return formated array
-
-    public static function arrFormated(&$item, $key)
-    {
-        $item = strstr($item, '_');
-        $item = substr($item, 1, strlen($item) - 1);
-        $item = "'" . $item;
-    }
-
     public static function requestEligibility($partner = '', $x12_270 = '')
     {
         global $X12info;
@@ -850,7 +849,7 @@ MIMEBODY;
         $response = oeHttp::bodyFormat('body')
             //->setDebug('5000')/* @todo uncomment and set proxy port to debug eg Fiddler */
             ->usingHeaders($headers)
-            ->post('https://wsd.officeally.com/TransactionSite/rtx.aspx', $mime_body); // @TODO put request urls in x12 partner's for versatility.
+            ->post($X12info['x12_eligibility_endpoint'], $mime_body);
 
         $formBody = $response->body();
         $contentType = $response->header('Content-Type')[0];

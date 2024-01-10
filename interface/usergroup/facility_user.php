@@ -17,6 +17,7 @@ require_once("$srcdir/options.inc.php");
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 
 if (!empty($_POST)) {
@@ -27,7 +28,8 @@ if (!empty($_POST)) {
 
 // Ensure authorized
 if (!AclMain::aclCheckCore('admin', 'users')) {
-    die(xlt("Unauthorized"));
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Facility Specific User Information")]);
+    exit;
 }
 
 $alertmsg = '';
@@ -146,7 +148,7 @@ if (isset($_POST["mode"]) && $_POST["mode"] == "facility_user_id" && isset($_POS
                                     foreach ($l_arr as $layout_entry) {
                                         $entry_data = sqlQuery("SELECT `field_value` FROM `facility_user_ids` " .
                                                                "WHERE `uid` = ? AND `facility_id` = ? AND `field_id` = ?", array($user['id'],$facility['id'],$layout_entry['field_id']));
-                                        echo "<td>" . generate_display_field($layout_entry, $entry_data['field_value']) . "&nbsp;</td>";
+                                        echo "<td>" . generate_display_field($layout_entry, ($entry_data['field_value'] ?? '')) . "&nbsp;</td>";
                                     }
                                     ?>
                                 </tr>

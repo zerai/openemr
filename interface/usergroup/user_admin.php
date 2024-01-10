@@ -7,23 +7,29 @@
  * @link      http://www.open-emr.org
  * @author    Brady Miller <brady.g.miller@gmail.com>
  * @author    Rod Roark <rod@sunsetsystems.com>
+ * @author    Daniel Pflieger <daniel@mi-squared.com> <daniel@growlingflea.com>
+ * @author    Ken Chapple <ken@mi-squared.com>
  * @copyright Copyright (c) 2018-2019 Brady Miller <brady.g.miller@gmail.com>
+ * @copyright Copyright (c) 2021 Daniel Pflieger <daniel@mi-squared.com> <daniel@growlingflea.com>
+ * @copyright Copyright (c) 2021 Ken Chapple <ken@mi-squared.com>
+ * @copyright Copyright (c) 2021 Rod Roark <rod@sunsetsystems.com>
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
 require_once("../globals.php");
-require_once("$srcdir/calendar.inc");
+require_once("$srcdir/calendar.inc.php");
 require_once("$srcdir/options.inc.php");
-require_once("$srcdir/erx_javascript.inc.php");
 
 use OpenEMR\Common\Acl\AclExtended;
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 use OpenEMR\Menu\MainMenuRole;
 use OpenEMR\Menu\PatientMenuRole;
 use OpenEMR\Services\FacilityService;
 use OpenEMR\Services\UserService;
+use OpenEMR\Events\User\UserEditRenderEvent;
 
 if (!empty($_GET)) {
     if (!CsrfUtils::verifyCsrfToken($_GET["csrf_token_form"])) {
@@ -33,7 +39,12 @@ if (!empty($_GET)) {
 
 $facilityService = new FacilityService();
 
-if (!$_GET["id"] || !AclMain::aclCheckCore('admin', 'users')) {
+if (!AclMain::aclCheckCore('admin', 'users')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Edit User")]);
+    exit;
+}
+
+if (!$_GET["id"]) {
     exit();
 }
 
@@ -48,7 +59,7 @@ $iter = $result[0];
 <html>
 <head>
 
-<?php Header::setupHeader(['common','opener']); ?>
+<?php Header::setupHeader(['common','opener', 'erx']); ?>
 
 <script src="checkpwd_validation.js"></script>
 
@@ -209,6 +220,14 @@ function authorized_clicked() {
  f.calendar.checked  =  f.authorized.checked;
 }
 
+function toggle_password() {
+  var x = document.getElementById("clearPass");
+  if (x.type === "password") {
+    x.type = "text";
+  } else {
+    x.type = "password";
+  }
+}
 </script>
 <style>
   .physician_type_class{
@@ -227,15 +246,17 @@ function authorized_clicked() {
     $is_super_user = AclMain::aclCheckCore('admin', 'super');
     $acl_name = AclExtended::aclGetGroupTitles($iter["username"]);
     $bg_name = '';
-    $bg_count = count($acl_name);
-    $selected_user_is_superuser = false;
-    for ($i = 0; $i < $bg_count; $i++) {
-        if ($acl_name[$i] == "Emergency Login") {
-            $bg_name = $acl_name[$i];
-        }
-        //check if user member on group with superuser rule
-        if (AclExtended::isGroupIncludeSuperuser($acl_name[$i])) {
-            $selected_user_is_superuser = true;
+    if (is_countable($acl_name)) {
+        $bg_count = count($acl_name);
+        $selected_user_is_superuser = false;
+        for ($i = 0; $i < $bg_count; $i++) {
+            if ($acl_name[$i] == "Emergency Login") {
+                $bg_name = $acl_name[$i];
+            }
+            //check if user member on group with superuser rule
+            if (AclExtended::isGroupIncludeSuperuser($acl_name[$i])) {
+                $selected_user_is_superuser = true;
+            }
         }
     }
     $disabled_save = !$is_super_user && $selected_user_is_superuser ? 'disabled' : '';
@@ -258,6 +279,17 @@ function authorized_clicked() {
 <input type=hidden name="user_type" value="<?php echo attr($bg_name); ?>" >
 
 <TABLE border=0 cellpadding=0 cellspacing=0>
+<tr>
+    <td colspan="4">
+        <?php
+        // TODO: we eventually want to move to a responsive layout and not use tables here.  So we are going to give
+        // module writers the ability to inject divs, tables, or whatever inside the cell instead of having them
+        // generate additional rows / table columns which locks us into that format.
+        $preRenderEvent = new UserEditRenderEvent('user_admin.php', $_GET['id']);
+        $GLOBALS['kernel']->getEventDispatcher()->dispatch($preRenderEvent, UserEditRenderEvent::EVENT_USER_EDIT_RENDER_BEFORE);
+        ?>
+    </td>
+</tr>
 <TR>
     <TD style="width:180px;"><span class=text><?php echo xlt('Username'); ?>: </span></TD>
     <TD style="width:270px;"><input type="text" name=username style="width:150px;" class="form-control" value="<?php echo attr($iter["username"]); ?>" disabled></td>
@@ -271,7 +303,12 @@ function authorized_clicked() {
     <TD style="width:180px;"><span class=text></span></TD>
     <TD style="width:270px;"></td>
     <TD style="width:200px;"><span class=text><?php echo xlt('User\'s New Password'); ?>: </span></TD>
-    <TD class='text' style="width:280px;">    <input type=text name=clearPass style="width:150px;"  class="form-control" value=""><font class="mandatory"></font></td>
+    <TD class='text' style="width:280px;">
+        <input type='password' id=clearPass name=clearPass style="width:150px;"  class="form-control" value="">
+        <input type="checkbox" id="togglePass" name="togglePass" onclick="toggle_password()" style="margin: .5rem 0 1rem;">
+        <label for="togglePass"><?php echo xlt('Show Password'); ?></label>
+        <font class="mandatory"></font>
+    </td>
 </TR>
 <?php } ?>
 
@@ -313,6 +350,10 @@ if ($iter["portal_user"]) {
 
 <TR>
 <td><span class=text><?php echo xlt('Last Name'); ?>: </span></td><td><input type="text" name=lname id=lname style="width:150px;"  class="form-control" value="<?php echo attr($iter["lname"]); ?>"><span class="mandatory"></span></td>
+<td><span class=text><?php echo xlt('Suffix'); ?>: </span></td><td><input type="text" name=suffix id=suffix style="width:150px;"  class="form-control" value="<?php echo attr($iter["suffix"]); ?>"></td>
+</tr>
+<tr>
+<td><span class=text><?php echo xlt('Valedictory'); ?>: </span></td><td><input type="text" name=valedictory id=valedictory style="width:150px;"  class="form-control" value="<?php echo attr($iter["valedictory"]); ?>"></td>
 <td><span class=text><?php echo xlt('Default Facility'); ?>: </span></td><td><select name=facility_id style="width:150px;" class="form-control">
 <?php
 $fres = $facilityService->getAllServiceLocations();
@@ -331,6 +372,7 @@ if ($fres) {
 }
 ?>
 </select></td>
+
 </tr>
 
 <?php if ($GLOBALS['restrict_user_facility']) { ?>
@@ -425,6 +467,7 @@ foreach (array(1 => xl('None{{Authorization}}'), 2 => xl('Only Mine'), 3 => xl('
 </tr>
 <tr>
 <td><span class="text"><?php echo xlt('Weno Provider ID'); ?>: </span></td><td><input type="text" name="erxprid" style="width:150px;" class="form-control" value="<?php echo attr($iter["weno_prov_id"]); ?>"></td>
+<td><span class="text"><?php echo xlt('Google Email for Login'); ?>: </span></td><td><input type="text" name="google_signin_email" style="width:150px;" class="form-control" value="<?php echo attr($iter["google_signin_email"]); ?>"></td>
 </tr>
 
 <tr>
@@ -451,9 +494,8 @@ foreach (array(1 => xl('None{{Authorization}}'), 2 => xl('Only Mine'), 3 => xl('
     ?>
   </td>
 
-
 </tr>
-<?php if ($GLOBALS['inhouse_pharmacy']) { ?>
+<?php if (!empty($GLOBALS['inhouse_pharmacy'])) { ?>
 <tr>
  <td class="text"><?php echo xlt('Default Warehouse'); ?>: </td>
  <td class='text'>
@@ -466,18 +508,73 @@ foreach (array(1 => xl('None{{Authorization}}'), 2 => xl('Only Mine'), 3 => xl('
     );
     ?>
  </td>
+
+    <?php if (!empty($GLOBALS['inhouse_pharmacy'])) { ?>
  <td class="text"><?php echo xlt('Invoice Refno Pool'); ?>: </td>
  <td class='text'>
-    <?php
-    echo generate_select_list(
-        'irnpool',
-        'irnpool',
-        $iter['irnpool'],
-        xl('Invoice reference number pool, if used')
-    );
-    ?>
+        <?php
+        echo generate_select_list(
+            'irnpool',
+            'irnpool',
+            $iter['irnpool'],
+            xl('Invoice reference number pool, if used')
+        );
+        ?>
  </td>
+    <?php } else { ?>
+  <td class="text" colspan="2">&nbsp;</td>
+    <?php } ?>
+
 </tr>
+<?php } ?>
+
+<!-- facility and warehouse restrictions, optional -->
+<?php if (!empty($GLOBALS['gbl_fac_warehouse_restrictions']) || !empty($GLOBALS['restrict_user_facility'])) { ?>
+ <tr title="<?php echo xla('If nothing is selected here then all are permitted.'); ?>">
+  <td class="text"><?php echo !empty($GLOBALS['gbl_fac_warehouse_restrictions']) ?
+    xlt('Facility and warehouse permissions') : xlt('Facility permissions'); ?>:</td>
+  <td colspan="3">
+   <select name="schedule_facility[]" multiple style="width:490px;">
+    <?php
+    $userFacilities = getUserFacilities($_GET['id'], 'id', $GLOBALS['gbl_fac_warehouse_restrictions']);
+    $ufid = array();
+    foreach ($userFacilities as $uf) {
+        $ufid[] = $uf['id'];
+    }
+    $fres = sqlStatement("select * from facility order by name");
+    if ($fres) {
+        while ($frow = sqlFetchArray($fres)) {
+            // Get the warehouses that are linked to this user and facility.
+            $whids = getUserFacWH($_GET['id'], $frow['id']); // from calendar.inc.php
+            // Generate an option for just the facility with no warehouse restriction.
+            echo "    <option";
+            if (empty($whids) && in_array($frow['id'], $ufid)) {
+                echo ' selected';
+            }
+            echo " value='" . attr($frow['id']) . "'>" . text($frow['name']) . "</option>\n";
+            // Then generate an option for each of the facility's warehouses.
+            // Does not apply if the site does not use warehouse restrictions.
+            if (!empty($GLOBALS['gbl_fac_warehouse_restrictions'])) {
+                $lres = sqlStatement(
+                    "SELECT option_id, title FROM list_options WHERE " .
+                    "list_id = ? AND option_value = ? ORDER BY seq, title",
+                    array('warehouse', $frow['id'])
+                );
+                while ($lrow = sqlFetchArray($lres)) {
+                    echo "    <option";
+                    if (in_array($lrow['option_id'], $whids)) {
+                        echo ' selected';
+                    }
+                    echo " value='" . attr($frow['id']) . "/" . attr($lrow['option_id']) . "'>&nbsp;&nbsp;&nbsp;" .
+                        text(xl_list_label($lrow['title'])) . "</option>\n";
+                }
+            }
+        }
+    }
+    ?>
+   </select>
+  </td>
+ </tr>
 <?php } ?>
 
  <tr>
@@ -488,13 +585,12 @@ foreach (array(1 => xl('None{{Authorization}}'), 2 => xl('Only Mine'), 3 => xl('
 $list_acl_groups = AclExtended::aclGetGroupTitleList($is_super_user || $selected_user_is_superuser);
 $username_acl_groups = AclExtended::aclGetGroupTitles($iter["username"]);
 foreach ($list_acl_groups as $value) {
-    if (($username_acl_groups) && in_array($value, $username_acl_groups)) {
-        // Modified 6-2009 by BM - Translate group name if applicable
-        echo " <option value='" . attr($value) . "' selected>" . text(xl_gacl_group($value)) . "</option>\n";
-    } else {
-        // Modified 6-2009 by BM - Translate group name if applicable
-        echo " <option value='" . attr($value) . "'>" . text(xl_gacl_group($value)) . "</option>\n";
+    // Disable groups that have any permissions that the logged-in user does not have.
+    $tmp = AclExtended::iHaveGroupPermissions($value) ? '' : 'disabled ';
+    if ($username_acl_groups && in_array($value, $username_acl_groups)) {
+        $tmp .= 'selected ';
     }
+    echo " <option value='" . attr($value) . "' $tmp>" . text(xl_gacl_group($value)) . "</option>\n";
 }
 ?>
   </select></td>
@@ -502,6 +598,42 @@ foreach ($list_acl_groups as $value) {
   <td><textarea style="width:150px;" name="comments" wrap=auto rows=4 cols=25 class="form-control"><?php echo text($iter["info"]); ?></textarea></td>
 
   </tr>
+    <tr>
+        <td><span class=text><?php echo xlt('Default Billing Facility'); ?>: </span></td><td><select name="billing_facility_id" style="width:150px;" class="form-control">
+            <?php
+            $fres = $facilityService->getAllBillingLocations();
+            if ($fres) {
+                $billResults = [];
+                for ($iter2 = 0; $iter2 < sizeof($fres); $iter2++) {
+                    $billResults[$iter2] = $fres[$iter2];
+                }
+
+                foreach ($billResults as $iter2) {
+                    ?>
+                    <option value="<?php echo attr($iter2['id']); ?>" <?php if ($iter['billing_facility_id'] == $iter2['id']) {
+                        echo "selected";
+                                   } ?>><?php echo text($iter2['name']); ?></option>
+                    <?php
+                }
+            }
+            ?>
+        </select></td>
+        <td>
+
+        </td>
+    </tr>
+    <tr>
+        <td colspan="4">
+            <?php
+            // TODO: we eventually want to move to a responsive layout and not use tables here.  So we are going to give
+            // module writers the ability to inject divs, tables, or whatever inside the cell instead of having them
+            // generate additional rows / table columns which locks us into that format.
+            $postRenderEvent = new UserEditRenderEvent('user_admin.php', $_GET['id']);
+            $GLOBALS['kernel']->getEventDispatcher()->dispatch($postRenderEvent, UserEditRenderEvent::EVENT_USER_EDIT_RENDER_AFTER);
+            ?>
+        </td>
+    </tr>
+
   <tr height="20" valign="bottom">
   <td colspan="4" class="text">
       <p>*<?php echo xlt('You must enter your own password to change user passwords. Leave blank to keep password unchanged.'); ?></p>

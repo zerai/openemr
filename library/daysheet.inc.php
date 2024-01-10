@@ -74,93 +74,13 @@ function array_natsort($aryData, $strIndex, $strSortBy, $strSortType = false)
     return $aryResult;
 }
 
-function GenerateTheQueryPart()
-{
-    global $query_part,$query_part2,$query_part_day,$query_part_day1,$billstring,$auth;
-    //Search Criteria section.
-    $billstring = '';
-    $auth = '';
-    $query_part = '';
-    $query_part_day = '';
-    $query_part_day1 = '';
-    $query_part2 = '';
-
-    if (isset($_REQUEST['final_this_page_criteria'])) {
-        foreach ($_REQUEST['final_this_page_criteria'] as $criteria_key => $criteria_value) {
-            $criteria_value = BillingReport::prepareSearchItem($criteria_value); // this escapes for sql
-            $SplitArray = array();
-          //---------------------------------------------------------
-            if (strpos($criteria_value, "billing.billed = '1'") !== false) {
-                $billstring .= ' AND ' . $criteria_value;
-            } elseif (strpos($criteria_value, "billing.billed = '0'") !== false) {
-                //3 is an error condition
-                $billstring .= ' AND ' . "(billing.billed is null or billing.billed = '0' or (billing.billed = '1' and billing.bill_process = '3'))";
-            } elseif (strpos($criteria_value, "billing.billed = '7'") !== false) {
-                $billstring .= ' AND ' . "billing.bill_process = '7'";
-            } elseif (strpos($criteria_value, "billing.id = 'null'") !== false) {
-                $billstring .= ' AND ' . "billing.id is null";
-            } elseif (strpos($criteria_value, "billing.id = 'not null'") !== false) {
-                $billstring .= ' AND ' . "billing.id is not null";
-            } elseif (strpos($criteria_value, "patient_data.fname") !== false) {
-                $SplitArray = explode(' like ', $criteria_value);
-                $query_part .= " AND ($criteria_value or patient_data.lname like " . $SplitArray[1] . ")";
-            } elseif (strpos($criteria_value, "billing.authorized") !== false) {
-                $auth = ' AND ' . $criteria_value;
-            } elseif (strpos($criteria_value, "form_encounter.pid") !== false) {//comes like '781,780'
-                $SplitArray = explode(" = '", $criteria_value);//comes like 781,780'
-                $SplitArray[1] = substr($SplitArray[1], 0, -1);//comes like 781,780
-                $query_part .= ' AND form_encounter.pid in (' . $SplitArray[1] . ')';
-                $query_part2 .= ' AND pid in (' . $SplitArray[1] . ')';
-            } elseif (strpos($criteria_value, "form_encounter.encounter") !== false) {//comes like '781,780'
-                $SplitArray = explode(" = '", $criteria_value);//comes like 781,780'
-                $SplitArray[1] = substr($SplitArray[1], 0, -1);//comes like 781,780
-                $query_part .= ' AND form_encounter.encounter in (' . $SplitArray[1] . ')';
-            } elseif (strpos($criteria_value, "insurance_data.provider = '1'") !== false) {
-                $query_part .= ' AND ' . "insurance_data.provider > '0' and (insurance_data.date <= form_encounter.date OR insurance_data.date IS NULL)";
-            } elseif (strpos($criteria_value, "insurance_data.provider = '0'") !== false) {
-                $query_part .= ' AND ' . "(insurance_data.provider = '0' or insurance_data.date > form_encounter.date)";
-            } else {
-                $query_part .= ' AND ' . $criteria_value;
-
-                if (substr($criteria_value, 1, 8) === 'form_enc') {
-                    $query_part_day .=  ' AND ' . '(ar_activity.post_time' . substr($criteria_value, 20) ;
-                }
-
-                if (substr($criteria_value, 1, 12) === 'billing.date') {
-                    $query_part_day .=  ' AND ' . '(ar_activity.post_time' . substr($criteria_value, 13) ;
-                }
-
-                if (substr($criteria_value, 1, 14) === 'claims.process') {
-                    $query_part_day .=  ' AND ' . '(ar_activity.post_time' . substr($criteria_value, 20) ;
-                }
-
-                if (substr($criteria_value, 0, 12) === 'billing.user') {
-                    $query_part_day .=  ' AND ' . 'ar_activity.post_user' . substr($criteria_value, 12) ;
-                }
-
-                if (substr($criteria_value, 1, 8) === 'form_enc') {
-                    $query_part_day1 .=  ' AND ' . '(dtime' . substr($query_part, 25, 58) ;
-                }
-
-                if (substr($criteria_value, 1, 12) === 'billing.date') {
-                    $query_part_day1 .=  ' AND ' . '(dtime' . substr($query_part, 18, 58) ;
-                }
-
-                if (substr($criteria_value, 1, 14) === 'claims.process') {
-                    $query_part_day1 .=  ' AND ' . '(dtime' . substr($query_part, 25, 58) ;
-                }
-            }
-        }
-    }
-}
-    //date must be in nice format (e.g. 2002-07-11)
-
+// date must be in nice format (e.g. 2002-07-11)
 function getBillsBetweendayReport(
     $code_type,
     $cols = "id,date,pid,code_type,code,user,authorized,x12_partner_id"
 ) {
 
-    GenerateTheQueryPart();
+    BillingReport::GenerateTheQueryPart($daysheet = true);
     global $query_part,$query_part2,$query_part_day,$query_part_day1,$billstring,$auth;
 
     $sql = "SELECT distinct form_encounter.pid AS enc_pid, form_encounter.date AS enc_date, concat(lname, ' ', fname) as 'fulname', lname as 'last', fname as 'first', " .

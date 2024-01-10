@@ -16,7 +16,19 @@
     ]
   },
   {
-    "label": "Flow Board",
+    "label": "Finder",
+    "menu_id": "fin0",
+    "target": "fin",
+    "url": "/interface/main/finder/dynamic_finder.php",
+    "children": [],
+    "requirement": 0,
+    "acl_req": [
+      "patients",
+      "demo"
+    ]
+  },
+  {
+    "label": "Flow",
     "menu_id": "pfb0",
     "target": "flb",
     "url": "/interface/patient_tracker/patient_tracker.php?skip_timeout_reset=1",
@@ -32,7 +44,7 @@
     ]
   },
   {
-        "label": "Recall Board",
+        "label": "Recalls",
         "menu_id": "pfb0",
         "target": "rcb",
         "url": "/interface/main/messages/messages.php?go=Recalls",
@@ -61,21 +73,9 @@
     ]
   },
   {
-    "label": "Patient/Client",
+    "label": "Patient",
     "menu_id": "patimg",
     "children": [
-      {
-        "label": "Patients",
-        "menu_id": "fin0",
-        "target": "fin",
-        "url": "/interface/main/finder/dynamic_finder.php",
-        "children": [],
-        "requirement": 0,
-        "acl_req": [
-          "patients",
-          "demo"
-        ]
-      },
       {
         "label": "New/Search",
         "menu_id": "new0",
@@ -196,39 +196,6 @@
         "label": "Visit Forms",
         "icon": "fa-caret-right",
         "children": [],
-        "requirement": 0
-      },
-      {
-        "label": "Import",
-        "icon": "fa-caret-right",
-        "children": [
-          {
-            "label": "Upload",
-            "menu_id": "ccr0",
-            "target": "pat",
-            "url": "/interface/patient_file/ccr_import.php",
-            "children": [],
-            "requirement": 0,
-            "acl_req": [
-              "patients",
-              "med",
-              "write"
-            ]
-          },
-          {
-            "label": "Pending Approval",
-            "menu_id": "apr0",
-            "target": "pat",
-            "url": "/interface/patient_file/ccr_pending_approval.php",
-            "children": [],
-            "requirement": 0,
-            "acl_req": [
-              "patients",
-              "med",
-              "write"
-            ]
-          }
-        ],
         "requirement": 0
       }
     ],
@@ -436,7 +403,7 @@
       {
         "label": "Billing Manager",
         "menu_id": "bil0",
-        "target": "bil",
+        "target": "bil0",
         "url": "/interface/billing/billing_report.php",
         "children": [],
         "requirement": 0,
@@ -501,6 +468,27 @@
           "eob"
         ],
         "global_req": "enable_edihistory_in_left_menu"
+      },
+      {
+        "label": "Claim File Tracker",
+        "menu_id": "biltrk0",
+        "target": "biltrk",
+        "url": "/interface/billing/billing_tracker.php",
+        "children": [],
+        "requirement": 0,
+        "acl_req": [
+            [
+                "acct",
+                "eob",
+                "write"
+            ],
+            [
+                "acct",
+                "bill",
+                "write"
+            ]
+        ],
+        "global_req": "auto_sftp_claims_to_x12_partner"
       }
     ],
     "requirement": 0,
@@ -539,11 +527,7 @@
         "target": "adm",
         "url": "/interface/drugs/drug_inventory.php",
         "children": [],
-        "requirement": 0,
-        "acl_req": [
-          "admin",
-          "drugs"
-        ]
+        "requirement": 0
       },
       {
         "label": "Destroyed",
@@ -552,13 +536,24 @@
         "url": "/interface/reports/destroyed_drugs_report.php",
         "children": [],
         "requirement": 0,
-        "acl_req": [
-          "admin",
-          "drugs"
-        ]
+          "acl_req": [
+            ["admin", "drugs"],
+            ["inventory", "reporting"]
+          ]
       }
     ],
     "requirement": 0,
+    "acl_req": [
+      ["admin", "drugs"],
+      ["inventory", "lots"],
+      ["inventory", "purchases"],
+      ["inventory", "transfers"],
+      ["inventory", "adjustments"],
+      ["inventory", "consumption"],
+      ["inventory", "destruction"],
+      ["inventory", "sales"],
+      ["inventory", "reporting"]
+    ],
     "global_req": "inhouse_pharmacy"
   },
   {
@@ -725,11 +720,11 @@
     ]
   },
   {
-    "label": "Administration",
+    "label": "Admin",
     "menu_id": "admimg",
     "children": [
       {
-        "label": "Globals",
+        "label": "Config",
         "menu_id": "adm0",
         "target": "adm",
         "url": "/interface/super/edit_globals.php",
@@ -820,6 +815,18 @@
             "menu_id": "adm0",
             "target": "adm",
             "url": "/interface/patient_file/merge_patients.php",
+            "children": [],
+            "requirement": 0,
+            "acl_req": [
+              "admin",
+              "super"
+            ]
+          },
+          {
+            "label": "Manage Duplicates",
+            "menu_id": "adm0",
+            "target": "adm",
+            "url": "/interface/patient_file/manage_dup_patients.php",
             "children": [],
             "requirement": 0,
             "acl_req": [
@@ -1109,6 +1116,18 @@
               "admin",
               "super"
             ]
+          },
+          {
+            "label": "API Clients",
+            "menu_id": "adm0",
+            "target": "adm",
+            "url": "/interface/smart/admin-client.php",
+            "children": [],
+            "requirement": 0,
+            "acl_req": [
+              "admin",
+              "super"
+            ]
           }
         ],
         "requirement": 0,
@@ -1140,7 +1159,7 @@
         ]
       },
       {
-        "label": "Addr Book",
+        "label": "Address Book",
         "menu_id": "adb0",
         "target": "adm",
         "url": "/interface/usergroup/addrbook_list.php",
@@ -1218,21 +1237,23 @@
               "super"
             ],
             "global_req": [
-              "erx_enable",
-              "newcrop_user_role"
+              "erx_enable"
             ]
           },
           {
             "label":"Weno Management",
             "menu_id":"adm0",
             "target":"adm",
-            "url":"/interface/weno/admin.php",
+            "url":"/interface/weno/facilities.php",
             "children":[],
             "requirement":0,
             "acl_req": [
               "admin",
               "super"
-            ]
+            ],
+              "global_req": [
+                  "weno_rx_enable"
+              ]
           }
         ],
         "requirement": 0,
@@ -1307,11 +1328,38 @@
             ],
             "global_req": "!disable_prescriptions"
           },
+            {
+                "label":"Prescription Log",
+                "menu_id":"rep0",
+                "target":"rep",
+                "url":"/interface/weno/rxlogmanager.php",
+                "children":[],
+                "requirement":0,
+                "acl_req": [
+                    "patients",
+                    "rx"
+                ],
+                "global_req": [
+                    "weno_rx_enable"
+                ]
+            },
           {
             "label": "Patient List Creation",
             "menu_id": "rep0",
             "target": "rep",
             "url": "/interface/reports/patient_list_creation.php",
+            "children": [],
+            "requirement": 0,
+            "acl_req": [
+              "patients",
+              "med"
+            ]
+          },
+          {
+            "label": "Message List",
+            "menu_id": "rep0",
+            "target": "rep",
+            "url": "/interface/reports/message_list.php",
             "children": [],
             "requirement": 0,
             "acl_req": [
@@ -1393,19 +1441,6 @@
             "global_req": "enable_cdr"
           },
           {
-            "label": "Quality Measures (CQM)",
-            "menu_id": "rep0",
-            "target": "rep",
-            "url": "/interface/reports/cqm.php?type=cqm",
-            "children": [],
-            "requirement": 0,
-            "acl_req": [
-              "patients",
-              "med"
-            ],
-            "global_req": "enable_cqm"
-          },
-          {
             "label": "Automated Measures (AMC)",
             "menu_id": "rep0",
             "target": "rep",
@@ -1419,17 +1454,16 @@
             "global_req": "enable_amc"
           },
           {
-            "label": "AMC Tracking",
+            "label": "2023 Real World Testing Report",
             "menu_id": "rep0",
             "target": "rep",
-            "url": "/interface/reports/amc_tracking.php",
+            "url": "/interface/reports/rwt_2023_report.php",
             "children": [],
             "requirement": 0,
             "acl_req": [
-              "patients",
-              "med"
-            ],
-            "global_req": "enable_amc_tracking"
+              "admin",
+              "super"
+            ]
           },
           {
             "label": "Alerts Log",
@@ -1693,6 +1727,18 @@
               "acct",
               "rep_a"
             ]
+          },
+          {
+            "label": "Payment Processing",
+            "menu_id": "rep0",
+            "target": "rep",
+            "url": "/interface/reports/payment_processing_report.php",
+            "children": [],
+            "requirement": 0,
+            "acl_req": [
+              "acct",
+              "rep_a"
+            ]
           }
         ],
         "requirement": 0
@@ -1706,36 +1752,28 @@
             "url": "/interface/reports/inventory_list.php",
             "target": "rep",
             "children": [],
-            "requirement": 0,
-            "acl_req": [
-              "admin",
-              "drugs"
-            ]
+            "requirement": 0
           },
           {
             "label": "Activity",
             "url": "/interface/reports/inventory_activity.php",
             "target": "rep",
             "children": [],
-            "requirement": 0,
-            "acl_req": [
-              "admin",
-              "drugs"
-            ]
+            "requirement": 0
           },
           {
             "label": "Transactions",
             "url": "/interface/reports/inventory_transactions.php",
             "target": "rep",
             "children": [],
-            "requirement": 0,
-            "acl_req": [
-              "admin",
-              "drugs"
-            ]
+            "requirement": 0
           }
         ],
         "requirement": 0,
+        "acl_req": [
+          ["admin", "drugs"],
+          ["inventory", "reporting"]
+        ],
         "global_req": "inhouse_pharmacy"
       },
       {
@@ -1892,6 +1930,32 @@
         "global_req": "ippf_specific"
       },
       {
+        "label": "Blank Forms",
+        "icon": "fa-caret-right",
+        "children": [
+          {
+            "label": "Core",
+            "icon": "fa-caret-right",
+            "children": [
+              {
+                "label": "Demographics",
+                "url": "/interface/patient_file/summary/demographics_print.php",
+                "target": "pop",
+                "requirement": 0
+              },
+              {
+                "label": "Superbill/Fee Sheet",
+                "url": "/interface/patient_file/printed_fee_sheet.php",
+                "target": "pop",
+                "requirement": 0
+              }
+            ],
+            "requirement": 0
+          }
+        ],
+        "requirement": 0
+      },
+      {
         "label": "Services",
         "icon": "fa-caret-right",
         "children": [
@@ -1904,7 +1968,7 @@
             "requirement": 0,
             "acl_req": [
               "admin",
-              "batchcom"
+              "super"
             ]
           },
           {
@@ -1913,13 +1977,29 @@
             "target": "rep",
             "url": "/interface/reports/direct_message_log.php",
             "children": [],
-            "requirement": 0
+            "requirement": 0,
+            "acl_req": [
+              "admin",
+              "super"
+            ]
+          },
+          {
+            "label": "IP Tracker",
+            "menu_id": "rep0",
+            "target": "rep",
+            "url": "/interface/reports/ip_tracker.php",
+            "children": [],
+            "requirement": 0,
+            "acl_req": [
+              "admin",
+              "super"
+            ]
           }
         ],
         "requirement": 0,
         "acl_req": [
           "admin",
-          "batchcom"
+          "super"
         ]
       }
     ],
@@ -2010,7 +2090,7 @@
         "global_req": "!disable_chart_tracker"
       },
       {
-        "label": "Ofc Notes",
+        "label": "Office Notes",
         "menu_id": "ono0",
         "target": "msc",
         "url": "/interface/main/onotes/office_comments.php",
@@ -2022,7 +2102,7 @@
         ]
       },
       {
-        "label": "BatchCom",
+        "label": "Batch Communication Tool",
         "menu_id": "adm0",
         "target": "msc",
         "url": "/interface/batchcom/batchcom.php",
@@ -2138,7 +2218,7 @@
         "global_req": "!ippf_specific"
       },
       {
-        "label": "Appts",
+        "label": "Appointments",
         "menu_id": "Popup:Appts",
         "url": "/interface/reports/appointments_report.php?patient=",
         "target": "pop",
@@ -2241,14 +2321,6 @@
         "global_req": "addr_label_type"
       }
     ],
-    "requirement": 0
-  },
-  {
-    "label": "About",
-    "menu_id": "abo0",
-    "target": "msc",
-    "url": "/interface/main/about_page.php",
-    "children": [],
     "requirement": 0
   }
 ]

@@ -14,6 +14,7 @@
 
 namespace Documents\Controller;
 
+use DOMDocument;
 use OpenEMR\Common\Crypto\CryptoGen;
 use Laminas\Mvc\Controller\AbstractActionController;
 use Laminas\View\Model\ViewModel;
@@ -21,6 +22,7 @@ use Laminas\View\Model\JsonModel;
 use Application\Listener\Listener;
 use Documents\Model\DocumentsTable;
 use Document;
+use XSLTProcessor;
 
 class DocumentsController extends AbstractActionController
 {
@@ -41,6 +43,23 @@ class DocumentsController extends AbstractActionController
     public function getDocumentsPlugin()
     {
         return $this->Documents();
+    }
+
+    public function isZipUpload($request = null)
+    {
+        if (!$request) {
+            $request = $this->getRequest();
+        }
+        if ($request->isPost() && count($_FILES) > 0) {
+            // we only deal with the first uploaded file... with zip files only one file at a time should be sent
+            $filePtr = reset($_FILES);
+            // we don't rely on the mime type sent from the client and grab it from the operating system
+            if (is_uploaded_file($filePtr['tmp_name'])) {
+                $mime_type = mime_content_type($filePtr['tmp_name']);
+                return $mime_type == 'application/zip';
+            }
+        }
+        return false;
     }
 
     /*
@@ -70,6 +89,9 @@ class DocumentsController extends AbstractActionController
                 $file_name = $dateStamp . "_" . basename($file["name"]);
                 $file["name"] = $file_name;
 
+                if ($file['type'] != 'text/xml' && $file['type'] != 'application/xml') {
+                    continue;
+                }
                 $documents[$i] = array(
                     'name' => $file_name,
                     'type' => $file['type'],
@@ -101,7 +123,7 @@ class DocumentsController extends AbstractActionController
                     $file['size'] = filesize($file['tmp_name']);
                 }
 
-                $ob = new \Document();
+                $ob = new Document();
                 $ret = $ob->createDocument($pid, $category_id, $file_name, $file['type'], $filetext, '', 1, 0);
             }
         }
@@ -139,8 +161,8 @@ class DocumentsController extends AbstractActionController
         $categoryIds = $this->getDocumentsTable()->getCategoryIDs(array('CCD', 'CCR', 'CCDA'));
         if (in_array($result['category_id'], $categoryIds) && $contentType == 'text/xml' && !$doEncryption) {
             $xml = simplexml_load_string($document);
-            $xsl = new \DomDocument();
-
+            $xsl = new DomDocument();
+            $qrda = $xml->templateId[2]['root'];
             switch ($result['category_id']) {
                 case $categoryIds['CCD']:
                     $style = "ccd.xsl";
@@ -149,12 +171,16 @@ class DocumentsController extends AbstractActionController
                     $style = "ccr.xsl";
                     break;
                 case $categoryIds['CCDA']:
-                    $style = "ccda.xsl";
+                    $style = "cda.xsl";
                     break;
-            };
+            }
 
+            if ($qrda == '2.16.840.1.113883.10.20.24.1.2') {
+                // a QRDA QDM CAT I document
+                $style = 'qrda.xsl';
+            }
             $xsl->load(__DIR__ . '/../../../../../public/xsl/' . $style);
-            $proc = new \XSLTProcessor();
+            $proc = new XSLTProcessor();
             $proc->importStyleSheet($xsl);
             $document = $proc->transformToXML($xml);
         }

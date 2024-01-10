@@ -11,7 +11,7 @@
  */
 
 require_once("../../globals.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once("history.inc.php");
 require_once("$srcdir/options.inc.php");
 
@@ -48,9 +48,11 @@ foreach ($_POST as $key => $val) {
 // Update history_data:
 //
 $newdata = array();
-$fres = sqlStatement("SELECT * FROM layout_options " .
-  "WHERE form_id = 'HIS' AND uor > 0 AND field_id != '' " .
-  "ORDER BY group_id, seq");
+$fres = sqlStatement(
+    "SELECT * FROM layout_options " .
+    "WHERE form_id LIKE 'HIS%' AND uor > 0 AND field_id != '' " .
+    "ORDER BY form_id, group_id, seq"
+);
 while ($frow = sqlFetchArray($fres)) {
     $field_id  = $frow['field_id'];
     // get value only if field exist in $_POST (prevent deleting of field with disabled attribute)

@@ -55,6 +55,9 @@ class GlobalConfig
     /** @var root url of the application */
     public static $ROOT_URL;
 
+    /** @var root url of the application */
+    public static $WEB_ROOT;
+
     /** @var ConnectionSetting object containing settings for the DB connection **/
     public static $CONNECTION_SETTING;
 
@@ -97,9 +100,9 @@ class GlobalConfig
             require_once 'verysimple/HTTP/RequestUtil.php';
             RequestUtil::NormalizeUrlRewrite();
 
-            require_once 'verysimple/Phreeze/Controller.php';
-            Controller::$SmartyViewPrefix = '';
-            Controller::$DefaultRedirectMode = 'header';
+            require_once 'verysimple/Phreeze/PortalController.php';
+            PortalController::$SmartyViewPrefix = '';
+            PortalController::$DefaultRedirectMode = 'header';
 
             self::$IS_INITIALIZED = true;
         }

@@ -11,8 +11,8 @@
  */
 
 require_once(__DIR__ . "/../../globals.php");
-require_once("$srcdir/api.inc");
-require_once("$srcdir/forms.inc");
+require_once("$srcdir/api.inc.php");
+require_once("$srcdir/forms.inc.php");
 
 use OpenEMR\Common\Csrf\CsrfUtils;
 
@@ -25,7 +25,7 @@ if ($encounter == "") {
 }
 
 if ($_GET["mode"] == "new") {
-    $newid = formSubmit("form_dictation", $_POST, $_GET["id"], $userauthorized);
+    $newid = formSubmit("form_dictation", $_POST, ($_GET["id"] ?? null), $userauthorized);
     addForm($encounter, "Speech Dictation", $newid, "dictation", $pid, $userauthorized);
 } elseif ($_GET["mode"] == "update") {
     sqlStatement("update form_dictation set pid = ?,groupname=?,user=?,authorized=?,activity=1, date = NOW(), dictation=?, additional_notes=? where id=?", array($_SESSION["pid"],$_SESSION["authProvider"],$_SESSION["authUser"],$userauthorized,$_POST["dictation"],$_POST["additional_notes"],$_GET["id"]));

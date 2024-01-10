@@ -23,6 +23,16 @@ class EventAuditLogger
     use Singleton;
 
     /**
+     * @var CryptoGen
+     */
+    private $cryptoGen;
+
+    /**
+     * @var boolean
+     */
+    private $breakglassUser;
+
+    /**
      * Event action codes indicate whether the event is read/write.
      * C = create, R = read, U = update, D = delete, E = execute
      */
@@ -145,8 +155,17 @@ MSG;
      * @param string    $menu_item
      * @param int       $ccda_doc_id
      */
-    public function newEvent($event, $user, $groupname, $success, $comments = "", $patient_id = null, $log_from = 'open-emr', $menu_item = 'dashboard', $ccda_doc_id = 0)
-    {
+    public function newEvent(
+        $event,
+        $user,
+        $groupname,
+        $success,
+        $comments = "",
+        $patient_id = null,
+        $log_from = 'open-emr',
+        $menu_item = 'dashboard',
+        $ccda_doc_id = 0
+    ) {
         $category = $event;
         // Special case delete for lists table
         if ($event == 'delete') {
@@ -280,7 +299,10 @@ MSG;
         } else {
             // do the query
             $sqlBindArray = array();
-            $sql = "SELECT $cols FROM `log_comment_encrypt` as el LEFT OUTER JOIN `log` as l ON el.`log_id` = l.`id` LEFT OUTER JOIN `api_log` as al ON el.`log_id` = al.`log_id` WHERE (l.`date` >= ? AND l.`date` <= ?) OR (l.`date` IS NULL OR l.`date` = '')";
+            $sql = "SELECT $cols FROM `log_comment_encrypt` as el " .
+                "LEFT OUTER JOIN `log` as l ON el.`log_id` = l.`id` " .
+                "LEFT OUTER JOIN `api_log` as al ON el.`log_id` = al.`log_id` " .
+                "WHERE (l.`date` IS NULL OR (l.`date` >= ? AND l.`date` <= ?))";
             array_push($sqlBindArray, $date1, $date2);
 
             if ($user != "") {
@@ -507,8 +529,7 @@ MSG;
      */
     public function auditSQLEvent($statement, $outcome, $binds = null)
     {
-
-        // Set up crypto object that will be used by this singleton class for for encryption/decryption (if not set up already)
+        // Set up crypto object that will be used by this singleton class for encryption/decryption (if not set up already)
         if (!isset($this->cryptoGen)) {
             $this->cryptoGen = new CryptoGen();
         }
@@ -516,8 +537,8 @@ MSG;
         $user =  $_SESSION['authUser'] ?? "";
 
         /* Don't log anything if the audit logging is not enabled. Exception for "emergency" users */
-        if (!isset($GLOBALS['enable_auditlog']) || !($GLOBALS['enable_auditlog'])) {
-            if (!$GLOBALS['gbl_force_log_breakglass'] || !$this->isBreakglassUser($user)) {
+        if (empty($GLOBALS['enable_auditlog'])) {
+            if (empty($GLOBALS['gbl_force_log_breakglass']) || !$this->isBreakglassUser($user)) {
                 return;
             }
         }
@@ -547,7 +568,7 @@ MSG;
 
         /* If query events are not enabled, don't log them. Exception for "emergency" users. */
         if (($querytype == "select") && !(array_key_exists('audit_events_query', $GLOBALS) && $GLOBALS['audit_events_query'])) {
-            if (!$GLOBALS['gbl_force_log_breakglass'] || !$this->isBreakglassUser($user)) {
+            if (empty($GLOBALS['gbl_force_log_breakglass']) || !$this->isBreakglassUser($user)) {
                 return;
             }
         }
@@ -628,7 +649,7 @@ MSG;
             }
         }
 
-        if (empty($GLOBALS["audit_events_${event}"])) {
+        if (empty($GLOBALS["audit_events_{$event}"])) {
             if (!$GLOBALS['gbl_force_log_breakglass'] || !$this->isBreakglassUser($user)) {
                 return;
             }
@@ -684,9 +705,6 @@ MSG;
     public function recordDisclosure($dates, $event, $pid, $recipient, $description, $user)
     {
         $adodb = $GLOBALS['adodb']['db'];
-        $crt_user = $_SERVER['SSL_CLIENT_S_DN_CN'];
-        $groupname = $_SESSION['authProvider'];
-        $success = 1;
         $sql = "insert into extended_log ( date, event, user, recipient, patient_id, description) " .
             "values (" . $adodb->qstr($dates) . "," . $adodb->qstr($event) . "," . $adodb->qstr($user) .
             "," . $adodb->qstr($recipient) . "," .

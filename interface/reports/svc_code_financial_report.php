@@ -20,13 +20,19 @@
  */
 
 require_once("../globals.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once "$srcdir/options.inc.php";
 require_once "$srcdir/appointments.inc.php";
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
+
+if (!AclMain::aclCheckCore('acct', 'rep_a')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Financial Summary by Service Code")]);
+    exit;
+}
 
 if (!empty($_POST)) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
@@ -39,11 +45,6 @@ $grand_total_amt_billed  = 0;
 $grand_total_amt_paid  = 0;
 $grand_total_amt_adjustment  = 0;
 $grand_total_amt_balance  = 0;
-
-
-if (!AclMain::aclCheckCore('acct', 'rep')) {
-    die(xlt("Unauthorized access."));
-}
 
 $form_from_date = (isset($_POST['form_from_date'])) ? DateToYYYYMMDD($_POST['form_from_date']) : date('Y-m-d');
 $form_to_date   = (isset($_POST['form_to_date'])) ? DateToYYYYMMDD($_POST['form_to_date']) : date('Y-m-d');
@@ -252,8 +253,8 @@ if (!empty($_POST['form_refresh']) || !empty($_POST['form_csvexport'])) {
 
     while ($erow = sqlFetchArray($res)) {
         $row = array();
-        $row['pid'] = $erow['pid'];
-        $row['provider_id'] = $erow['provider_id'];
+        $row['pid'] = $erow['pid'] ?? null;
+        $row['provider_id'] = $erow['provider_id'] ?? null;
         $row['Procedure codes'] = $erow['code'];
         $row['Units'] = $erow['units'];
         $row['Amt Billed'] = $erow['billed'];
@@ -261,7 +262,7 @@ if (!empty($_POST['form_refresh']) || !empty($_POST['form_csvexport'])) {
         $row['Adjustment Amt'] = $erow['AdjustAmount'];
         $row['Balance Amt'] = $erow['Balance'];
         $row['financial_reporting'] = $erow['financial_reporting'];
-        $rows[$erow['pid'] . '|' . $erow['code'] . '|' . $erow['units']] = $row;
+        $rows[($erow['pid'] ?? null) . '|' . $erow['code'] . '|' . $erow['units']] = $row;
     }
 
     if ($_POST['form_csvexport']) {

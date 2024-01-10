@@ -11,10 +11,10 @@
  * @author  Wakie87 <scott@npclinics.com.au>
  * @author  Robert Down <robertdown@live.com>
  * @copyright Copyright (c) 2010-2018 bradymiller <bradymiller>
- * @copyright Copyright (c) 2008-2009 sunsetsystems <sunsetsystems>
+ * @copyright Copyright (c) 2008-2009, 2022 sunsetsystems <sunsetsystems>
  * @copyright Copyright (c) 2005 andres_paglayan <andres_paglayan>
  * @copyright Copyright (c) 2016 Wakie87 <scott@npclinics.com.au>
- * @copyright Copyright (c) 2017 Robert Down <robertdown@live.com>
+ * @copyright Copyright (c) 2017-2023 Robert Down <robertdown@live.com>
  * @license https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
@@ -45,7 +45,7 @@ if (!$thisauth) {
     <div class="form-group">
         <label for="filterForConstants"><?php echo xlt('Filter for Constants'); ?>:</label>
         <input type='text' class="form-control" id="filterForConstants" name='filter_cons'
-               size='8' value='<?php echo attr($_POST['filter_cons']); ?>' />
+               size='8' value='<?php echo attr($_POST['filter_cons'] ?? ''); ?>' />
         <small class="form-text text-muted">
             <?php echo xlt('(% matches any string, _ matches any character)'); ?>
         </small>
@@ -54,7 +54,7 @@ if (!$thisauth) {
     <div class="form-group">
         <label for="filterForDefinitions"><?php echo xlt('Filter for Definitions'); ?>:</label>
         <input type='text' class="form-control" id="filterForDefinitions" name='filter_def'
-               size='8' value='<?php echo attr($_POST['filter_def']); ?>' />
+               size='8' value='<?php echo attr($_POST['filter_def'] ?? ''); ?>' />
         <small class="form-text text-muted">
             <?php echo xlt('(% matches any string, _ matches any character)'); ?>
         </small>
@@ -112,7 +112,7 @@ if (!$disable_utf8_flag) {
     $case_insensitive_collation = "COLLATE latin1_swedish_ci";
 }
 
-if ($_POST['load']) {
+if (!empty($_POST['load'])) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
         CsrfUtils::csrfNotVerified();
     }
@@ -151,7 +151,7 @@ if ($_POST['load']) {
             $value = trim($value);
 
             // only continue if the definition is new
-            $sql = "SELECT * FROM lang_definitions WHERE def_id=? AND definition=? " . $case_sensitive_collation;
+            $sql = "SELECT * FROM lang_definitions WHERE def_id=? AND definition " . $case_sensitive_collation . " =?";
             $res_test = SqlStatement($sql, array($key, $value));
             if (!SqlFetchArray($res_test)) {
                 // insert into the main language tables
@@ -177,7 +177,7 @@ if ($_POST['load']) {
     }
 }
 
-if ($_POST['edit']) {
+if (!empty($_POST['edit'])) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
         CsrfUtils::csrfNotVerified();
     }
@@ -210,7 +210,9 @@ if ($_POST['edit']) {
         $lang_name = $row['lang_description'];
     }
 
-    $sql .= ") ORDER BY lc.constant_name " . $case_insensitive_collation;
+    // Sort same case together and English/null before other languages.
+    $sql .= ") ORDER BY lc.constant_name, BINARY lc.constant_name, ld.lang_id " . $case_insensitive_collation;
+
     $res = SqlStatement($sql, $bind_sql_array);
 
         $isResults = false; //flag to record whether there are any results
@@ -315,9 +317,5 @@ if ($_POST['edit']) {
 }
 
 ?>
-<script>
-    $("#definition-link").addClass("active");
-    $("#language-link").removeClass("active");
-    $("#constant-link").removeClass("active");
-    $("#manage-link").removeClass("active");
-</script>
+
+<?php echo activate_lang_tab('definition-link'); ?>

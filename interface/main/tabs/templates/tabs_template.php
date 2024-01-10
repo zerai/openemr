@@ -14,22 +14,21 @@
 
 <script type="text/html" id="tabs-controls">
     <div class="tabControls" data-bind="with: tabs">
-        <div class="tabNotchosen w-1">
+        <div class="tabsNoHover w-1">
             <i class="fa fa-caret-up menu_arrow" id="patient_caret" title="<?php echo xla('Toggle the Patient Panel'); ?>" aria-hidden="true"></i>
         </div>
         <!-- ko  foreach: tabsList -->
-            <div class="tabSpan bgcolor2" data-bind="click: tabClicked, css: {tabNotchosen: !visible()}">
-                <span class="tabTitle" data-bind="text: title, click: tabClicked, css: {tabHidden: !visible()}"></span>
-                <span class="fa fa-fw fa-sync" data-bind="click: tabRefresh, class: spinner"></span>
+            <div class="tabSpan bgcolor2" data-bind="click: tabClicked, css: {tabsNoHover: !visible()}">
+                <span class="tabTitle pr-2" data-bind="text: title, click: tabClicked, css: {tabHidden: !visible()}"></span>
+                <span class="fa fa-fw fa-xs mr-1 fa-sync" data-bind="click: tabRefresh, class: spinner"></span>
                 <!--ko if:!locked() -->
-                    <span class="fa fa-fw fa-unlock" data-bind="click: tabLockToggle"></span>
+                    <span class="fa fa-fw fa-xs mr-1 fa-unlock" data-bind="click: tabLockToggle"></span>
                 <!-- /ko -->
                 <!--ko if:locked() -->
-                    <span class="fa fa-fw fa-lock" data-bind="click: tabLockToggle"></span>
+                    <span class="fa fa-fw fa-xs mr-1 fa-lock" data-bind="click: tabLockToggle"></span>
                 <!-- /ko -->
-
                 <!-- ko if:closable-->
-                    <span class="fa fa-fw fa-times" data-bind="click: tabClose"></span>
+                    <span class="fa fa-fw fa-xs fa-times" data-bind="click: tabClose"></span>
                 <!-- /ko -->
             </div>
         <!-- /ko -->

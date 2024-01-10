@@ -10,44 +10,53 @@
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
-require_once(dirname(__FILE__) . "/../library/forms.inc");
+require_once(__DIR__ . "/../library/forms.inc.php");
+require_once(__DIR__ . "/../library/patient.inc.php");
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Crypto\CryptoGen;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Logging\SystemLogger;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Services\FacilityService;
 use OpenEMR\Services\PatientService;
+use OpenEMR\Events\PatientDocuments\PatientDocumentTreeViewFilterEvent;
 
 class C_Document extends Controller
 {
+    public $documents;
+    public $document_categories;
+    public $tree;
+    public $_config;
+    public $manual_set_owner = false; // allows manual setting of a document owner/service
+    public $facilityService;
+    public $patientService;
+    public $_last_node;
+    private $Document;
+    private $cryptoGen;
+    private bool $skip_acl_check = false;
 
-    var $template_mod;
-    var $documents;
-    var $document_categories;
-    var $tree;
-    var $_config;
-    var $manual_set_owner = false; // allows manual setting of a document owner/service
-    var $facilityService;
-    var $patientService;
-
-    function __construct($template_mod = "general")
+    public function __construct($template_mod = "general")
     {
         parent::__construct();
         $this->facilityService = new FacilityService();
         $this->patientService = new PatientService();
         $this->documents = array();
         $this->template_mod = $template_mod;
-        $this->assign("FORM_ACTION", $GLOBALS['webroot'] . "/controller.php?" . attr($_SERVER['QUERY_STRING']));
+        $this->assign("FORM_ACTION", $GLOBALS['webroot'] . "/controller.php?" . attr($_SERVER['QUERY_STRING'] ?? ''));
         $this->assign("CURRENT_ACTION", $GLOBALS['webroot'] . "/controller.php?" . "document&");
 
-        $this->assign("CSRF_TOKEN_FORM", CsrfUtils::collectCsrfToken());
+        if (php_sapi_name() !== 'cli') {
+            // skip when this is being called via command line for the ccda importing
+            $this->assign("CSRF_TOKEN_FORM", CsrfUtils::collectCsrfToken());
+        }
 
         $this->assign("IMAGES_STATIC_RELATIVE", $GLOBALS['images_static_relative']);
 
         //get global config options for this namespace
         $this->_config = $GLOBALS['oer_config']['documents'];
 
-        $this->_args = array("patient_id" => $_GET['patient_id']);
+        $this->_args = array("patient_id" => ($_GET['patient_id'] ?? null));
 
         $this->assign("STYLE", $GLOBALS['style']);
         $t = new CategoryTree(1);
@@ -59,7 +68,7 @@ class C_Document extends Controller
         $this->cryptoGen = new CryptoGen();
     }
 
-    function upload_action($patient_id, $category_id)
+    public function upload_action($patient_id, $category_id)
     {
         $category_name = $this->tree->get_node_name($category_id);
         $this->assign("category_id", $category_id);
@@ -74,7 +83,7 @@ class C_Document extends Controller
         if (file_exists($templatedir)) {
               $dh = opendir($templatedir);
         }
-        if ($dh) {
+        if (!empty($dh)) {
               $templateslist = array();
             while (false !== ($sfname = readdir($dh))) {
                 if (substr($sfname, 0, 1) == '.') {
@@ -122,7 +131,7 @@ class C_Document extends Controller
         return $this->list_action($patient_id);
     }
 
-    function zip_dicom_folder($study_name = null)
+    public function zip_dicom_folder($study_name = null)
     {
         $zip = new ZipArchive();
         $zip_name = $GLOBALS['temporary_files_dir'] . "/" . $study_name;
@@ -160,7 +169,7 @@ class C_Document extends Controller
     }
 
     //Upload multiple files on single click
-    function upload_action_process()
+    public function upload_action_process()
     {
 
         // Collect a manually set owner if this has been set
@@ -195,6 +204,8 @@ class C_Document extends Controller
 
         if (is_numeric($_POST['category_id'])) {
             $category_id = $_POST['category_id'];
+        } else {
+            $category_id = 1;
         }
 
         $patient_id = 0;
@@ -204,7 +215,18 @@ class C_Document extends Controller
             $patient_id = $_POST['patient_id'];
         }
 
-        if (!empty($_FILES['dicom_folder']['name'][0])) {
+        // ensure user has access to the category that is being uploaded to
+        $skipUpload = false;
+        if (!$this->isSkipAclCheck()) {
+            $acoSpec = sqlQuery("SELECT `aco_spec` from `categories` WHERE `id` = ?", [$category_id])['aco_spec'];
+            if (AclMain::aclCheckAcoSpec($acoSpec) === false) {
+                $error = xl("Not authorized to upload to the selected category.\n");
+                $skipUpload = true;
+                (new SystemLogger())->debug("An attempt was made to upload a document to an unauthorized category", ['user-id' => $_SESSION['authUserID'], 'patient-id' => $patient_id, 'category-id' => $category_id]);
+            }
+        }
+
+        if (!$skipUpload && !empty($_FILES['dicom_folder']['name'][0])) {
             // let's zip um up then pass along new zip
             $study_name = $_POST['destination'] ? (trim($_POST['destination']) . ".zip") : 'DicomStudy.zip';
             $study_name =  preg_replace('/\s+/', '_', $study_name);
@@ -218,7 +240,7 @@ class C_Document extends Controller
         }
 
         $sentUploadStatus = array();
-        if (count($_FILES['file']['name']) > 0) {
+        if (!$skipUpload && count($_FILES['file']['name']) > 0) {
             $upl_inc = 0;
 
             foreach ($_FILES['file']['name'] as $key => $value) {
@@ -267,7 +289,6 @@ class C_Document extends Controller
                             }
                             $za->close();
                             if ($mimetype == "application/dicom+zip") {
-                                $_FILES['file']['type'][$key] = $mimetype;
                                 sleep(1); // Timing insurance in case of re-compression. Only acted on index so...!
                                 $_FILES['file']['size'][$key] = filesize($_FILES['file']['tmp_name'][$key]); // file may have grown.
                             }
@@ -286,14 +307,22 @@ class C_Document extends Controller
                     if ($_POST['destination'] != '') {
                         $fname = $_POST['destination'];
                     }
-                    // set mime, test for single DICOM and assign extension if missing.
-                    $mimetype = $_FILES['file']['type'][$key];
+                    // test for single DICOM and assign extension if missing.
                     if (strpos($filetext, 'DICM') !== false) {
                         $mimetype = 'application/dicom';
                         $parts = pathinfo($fname);
                         if (!$parts['extension']) {
                             $fname .= '.dcm';
                         }
+                    }
+                    // set mimetype (if not already set above)
+                    if (empty($mimetype)) {
+                        $mimetype = mime_content_type($_FILES['file']['tmp_name'][$key]);
+                    }
+                    // if mimetype still empty, then do not upload the file
+                    if (empty($mimetype)) {
+                        $error = xl("Unable to discover mimetype, so did not upload " . $_FILES['file']['tmp_name'][$key]) . ".\n";
+                        continue;
                     }
                     $d = new Document();
                     $rc = $d->createDocument(
@@ -331,7 +360,7 @@ class C_Document extends Controller
                 }
                 // Following is just an example of code in such a plugin file.
                 /*****************************************************
-                function documentUploadPostProcess($filename, &$d) {
+                public function documentUploadPostProcess($filename, &$d) {
                   $userid = $_SESSION['authUserID'];
                   $row = sqlQuery("SELECT username FROM users WHERE id = ?", array($userid));
                   $owner = strtolower($row['username']);
@@ -344,15 +373,15 @@ class C_Document extends Controller
             }
         }
 
-        $this->assign("error", nl2br($error));
+        $this->assign("error", $error);
         //$this->_state = false;
         $_POST['process'] = "";
         //return $this->fetch($GLOBALS['template_dir'] . "documents/" . $this->template_mod . "_upload.html");
     }
 
-    function note_action_process($patient_id)
+    public function note_action_process($patient_id)
     {
-        // this function is a dual function that will set up a note associated with a document or send a document via email.
+        // this public function is a dual public function that will set up a note associated with a document or send a document via email.
 
         if ($_POST['process'] != "true") {
             return;
@@ -421,16 +450,16 @@ class C_Document extends Controller
         return $this->view_action($patient_id, $n->get_foreign_id());
     }
 
-    function default_action()
+    public function default_action()
     {
         return $this->list_action();
     }
 
-    function view_action(string $patient_id = null, $doc_id)
+    public function view_action(string $patient_id = null, $doc_id)
     {
         global $ISSUE_TYPES;
 
-        require_once(dirname(__FILE__) . "/../library/lists.inc");
+        require_once(dirname(__FILE__) . "/../library/lists.inc.php");
 
         $d = new Document($doc_id);
         $notes = $d->get_notes();
@@ -513,10 +542,10 @@ class C_Document extends Controller
 
         $this->assign("notes", $notes);
 
-        $this->assign("IMG_PROCEDURE_TAG_ACTION", $this->_link("image_procedure") . "document_id=" . urlencode($d->get_id()));
-            // Populate the dropdown with image procedure order list
-        $imgOptions = "<option value='0'>-- " . xlt('Select Image Procedure') . " --</option>";
-        $imgOrders  = sqlStatement("select procedure_name,po.procedure_order_id,procedure_code from procedure_order po inner join procedure_order_code poc on poc.procedure_order_id = po.procedure_order_id where po.patient_id = ?  and poc.procedure_order_title = 'imaging'", array($patient_id));
+        $this->assign("PROCEDURE_TAG_ACTION", $this->_link("image_procedure") . "document_id=" . urlencode($d->get_id()));
+        // Populate the dropdown with procedure order list
+        $imgOptions = "<option value='0'>-- " . xlt('Select Procedure') . " --</option>";
+        $imgOrders  = sqlStatement("select procedure_name,po.procedure_order_id,procedure_code,poc.procedure_order_title from procedure_order po inner join procedure_order_code poc on poc.procedure_order_id = po.procedure_order_id where po.patient_id = ?", array($patient_id));
         $mapping    = $this->get_mapped_procedure($d->get_id());
         if (sqlNumRows($imgOrders) > 0) {
             while ($row = sqlFetchArray($imgOrders)) {
@@ -524,11 +553,11 @@ class C_Document extends Controller
                 if ((isset($mapping['procedure_code']) && $mapping['procedure_code'] == $row['procedure_code']) && (isset($mapping['procedure_code']) && $mapping['procedure_order_id'] == $row['procedure_order_id'])) {
                     $sel_proc = 'selected';
                 }
-                $imgOptions .= "<option value='" . attr($row['procedure_order_id']) . "' data-code='" . attr($row['procedure_code']) . "' $sel_proc>" . text($row['procedure_name'] . ' - ' . $row['procedure_code']) . "</option>";
+                $imgOptions .= "<option value='" . attr($row['procedure_order_id']) . "' data-code='" . attr($row['procedure_code']) . "' $sel_proc>" . text($row['procedure_name'] . ' - ' . $row['procedure_code'] . ' : ' . ucfirst($row['procedure_order_title'])) . "</option>";
             }
         }
 
-        $this->assign('IMAGE_PROCEDURE_LIST', $imgOptions);
+        $this->assign('TAG_PROCEDURE_LIST', $imgOptions);
 
         $this->assign('clear_procedure_tag', $this->_link('clear_procedure_tag') . "document_id=" . urlencode($d->get_id()));
 
@@ -537,7 +566,7 @@ class C_Document extends Controller
         $menu  = new HTML_TreeMenu();
 
         //pass an empty array because we don't want the documents for each category showing up in this list box
-        $rnode = $this->_array_recurse($this->tree->tree, array());
+        $rnode = $this->array_recurse($this->tree->tree, $patient_id, array());
         $menu->addItem($rnode);
         $treeMenu_listbox  = new HTML_TreeMenu_Listbox($menu, array("promoText" => xl('Move Document to Category:')));
 
@@ -551,11 +580,11 @@ class C_Document extends Controller
 
     /**
      * Retrieve file from hard disk / CouchDB.
-     * In case that file isn't download this function will return thumbnail image (if exist).
+     * In case that file isn't download this public function will return thumbnail image (if exist).
      * @param (boolean) $show_original - enable to show the original image (not thumbnail) in inline status.
      * @param (string) $context - given a special document scenario (e.g.: patient avatar, custom image viewer document, etc), the context can be set so that a switch statement can execute a custom strategy.
      * */
-    function retrieve_action(string $patient_id = null, $document_id, $as_file = true, $original_file = true, $disable_exit = false, $show_original = false, $context = "normal")
+    public function retrieve_action(string $patient_id = null, $document_id, $as_file = true, $original_file = true, $disable_exit = false, $show_original = false, $context = "normal")
     {
         $encrypted = $_POST['encrypted'] ?? false;
         $passphrase = $_POST['passphrase'] ?? '';
@@ -568,7 +597,7 @@ class C_Document extends Controller
             $doEncryption = true;
         }
 
-            //controller function ruins booleans, so need to manually re-convert to booleans
+            //controller public function ruins booleans, so need to manually re-convert to booleans
         if ($as_file == "true") {
                 $as_file = true;
         } elseif ($as_file == "false") {
@@ -597,6 +626,22 @@ class C_Document extends Controller
         }
 
         $d = new Document($document_id);
+
+        // ensure user/patient has access
+        if (isset($_SESSION['patient_portal_onsite_two']) && isset($_SESSION['pid'])) {
+            // ensure patient has access (called from patient portal)
+            if (!$d->can_patient_access($_SESSION['pid'])) {
+                (new SystemLogger())->debug("An attempt was made by a patient to download a document from an unauthorized category", ['patient-id' => $_SESSION['pid'], 'document-id' => $document_id]);
+                die(xlt("Not authorized to view requested file"));
+            }
+        } else {
+            // ensure user has access
+            if (!$d->can_access()) {
+                (new SystemLogger())->debug("An attempt was made by a user to download a document from an unauthorized category", ['user-id' => $_SESSION['authUserID'], 'patient-id' => $patient_id, 'document-id' => $document_id]);
+                die(xlt("Not authorized to view requested file"));
+            }
+        }
+
         $url =  $d->get_url();
         $th_url = $d->get_thumb_url();
 
@@ -776,10 +821,12 @@ class C_Document extends Controller
                 if ($d->get_encrypted() == 1) {
                     $filetext = $this->cryptoGen->decryptStandard(file_get_contents($url), null, 'database');
                 } else {
-                    $filetext = file_get_contents($url);
+                    if (!is_dir($url)) {
+                        $filetext = file_get_contents($url);
+                    }
                 }
                 if ($disable_exit == true) {
-                    return $filetext;
+                    return $filetext ?? '';
                 }
                 header('Content-Description: File Transfer');
                 header('Content-Transfer-Encoding: binary');
@@ -795,8 +842,8 @@ class C_Document extends Controller
                 } else {
                     header("Content-Disposition: " . ($as_file ? "attachment" : "inline") . "; filename=\"" . $d->get_name() . "\"");
                     header("Content-Type: " . $d->get_mimetype());
-                    header("Content-Length: " . strlen($filetext));
-                    echo $filetext;
+                    header("Content-Length: " . strlen($filetext ?? ''));
+                    echo $filetext ?? '';
                 }
                 exit;
             } else {
@@ -860,11 +907,13 @@ class C_Document extends Controller
         }
     }
 
-    function move_action_process(string $patient_id = null, $document_id)
+    public function move_action_process(string $patient_id = null, $document_id)
     {
         if ($_POST['process'] != "true") {
             return;
         }
+
+        $messages = '';
 
         $new_category_id = $_POST['new_category_id'];
         $new_patient_id = $_POST['new_patient_id'];
@@ -905,7 +954,7 @@ class C_Document extends Controller
         return $this->view_action($patient_id, $document_id);
     }
 
-    function validate_action_process(string $patient_id = null, $document_id)
+    public function validate_action_process(string $patient_id = null, $document_id)
     {
 
         $d = new Document($document_id);
@@ -975,7 +1024,7 @@ class C_Document extends Controller
         } elseif ($current_hash != $d->get_hash()) {
             $messages .= xl('Hash does not match. Data integrity has been compromised.');
         } else {
-            $messages = xl('Document passed integrity check. | ') . $messages;
+            $messages = xl('Document passed integrity check.') . ' | ' . $messages;
         }
         $this->_state = false;
         $this->assign("messages", $messages);
@@ -984,7 +1033,7 @@ class C_Document extends Controller
 
     // Added by Rod for metadata update.
     //
-    function update_action_process(string $patient_id = null, $document_id)
+    public function update_action_process(string $patient_id = null, $document_id)
     {
 
         if ($_POST['process'] != "true") {
@@ -1012,7 +1061,7 @@ class C_Document extends Controller
             }
 
             if (preg_match('/^\d\d\d\d-\d+-\d+$/', $docdate)) {
-                $docdate = "'$docdate'";
+                $docdate = "$docdate";
             } else {
                 $docdate = "NULL";
             }
@@ -1036,14 +1085,14 @@ class C_Document extends Controller
         return $this->view_action($patient_id, $document_id);
     }
 
-    function list_action($patient_id = "")
+    public function list_action($patient_id = "")
     {
         $this->_last_node = null;
         $categories_list = $this->tree->_get_categories_array($patient_id);
         //print_r($categories_list);
 
         $menu  = new HTML_TreeMenu();
-        $rnode = $this->_array_recurse($this->tree->tree, $categories_list);
+        $rnode = $this->array_recurse($this->tree->tree, $patient_id, $categories_list);
         $menu->addItem($rnode);
         $treeMenu = new HTML_TreeMenu_DHTML($menu, array('images' => 'public/images', 'defaultClass' => 'treeMenuDefault'));
         $treeMenu_listbox  = new HTML_TreeMenu_Listbox($menu, array('linkTarget' => '_self'));
@@ -1054,19 +1103,27 @@ class C_Document extends Controller
         $cur_pid = isset($_GET['patient_id']) ? filter_input(INPUT_GET, 'patient_id') : '';
         $used_msg = xl('Current patient unavailable here. Use Patient Documents');
         if ($cur_pid == '00') {
+            if (!AclMain::aclCheckCore('patients', 'docs', '', ['write', 'addonly'])) {
+                echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Documents")]);
+                exit;
+            }
             $cur_pid = '0';
             $is_new = 1;
+        }
+        if (!AclMain::aclCheckCore('patients', 'docs')) {
+            echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Documents")]);
+            exit;
         }
         $this->assign('is_new', $is_new);
         $this->assign('place_hld', $place_hld);
         $this->assign('cur_pid', $cur_pid);
         $this->assign('used_msg', $used_msg);
-        $this->assign('demo_pid', $_SESSION['pid']);
+        $this->assign('demo_pid', ($_SESSION['pid'] ?? null));
 
         return $this->fetch($GLOBALS['template_dir'] . "documents/" . $this->template_mod . "_list.html");
     }
 
-    function &_array_recurse($array, $categories = array())
+    public function &array_recurse($array, $patient_id, $categories = array())
     {
         if (!is_array($array)) {
             $array = array();
@@ -1089,7 +1146,7 @@ class C_Document extends Controller
                     $current_node = &$this->_last_node;
                 }
 
-                $this->_array_recurse($ar, $categories);
+                $this->array_recurse($ar, $patient_id, $categories);
             } else {
                 if ($id === 0 && !empty($ar)) {
                     $info = $this->tree->get_node_info($id);
@@ -1108,36 +1165,37 @@ class C_Document extends Controller
             // If there are documents in this document category, then add their
             // attributes to the current node.
             $icon = "file3.png";
-            if (is_array($categories[$id])) {
+            if (!empty($categories[$id]) && is_array($categories[$id])) {
                 foreach ($categories[$id] as $doc) {
                     $link = $this->_link("view") . "doc_id=" . urlencode($doc['document_id']) . "&";
           // If user has no access then there will be no link.
                     if (!AclMain::aclCheckAcoSpec($doc['aco_spec'])) {
                         $link = '';
                     }
-                    if ($this->tree->get_node_name($id) == "CCR") {
-                        $current_node->addItem(new HTML_TreeNode(array(
-                            'text' => oeFormatShortDate($doc['docdate']) . ' ' . $doc['document_name'] . '-' . $doc['document_id'],
-                            'link' => $link,
-                            'icon' => $icon,
-                            'expandedIcon' => $expandedIcon,
-                            'events' => array('Onclick' => "javascript:newwindow=window.open('ccr/display.php?type=CCR&doc_id=" . attr_url($doc['document_id']) . "','_blank');")
-                        )));
-                    } elseif ($this->tree->get_node_name($id) == "CCD") {
-                        $current_node->addItem(new HTML_TreeNode(array(
-                            'text' => oeFormatShortDate($doc['docdate']) . ' ' . $doc['document_name'] . '-' . $doc['document_id'],
-                            'link' => $link,
-                            'icon' => $icon,
-                            'expandedIcon' => $expandedIcon,
-                            'events' => array('Onclick' => "javascript:newwindow=window.open('ccr/display.php?type=CCD&doc_id=" . attr_url($doc['document_id']) . "','_blank');")
-                        )));
+                    // CCD view
+                    $nodeInfo = $this->tree->get_node_info($id);
+                    $treeViewFilterEvent = new PatientDocumentTreeViewFilterEvent();
+                    $treeViewFilterEvent->setCategoryTreeNode($this->tree);
+                    $treeViewFilterEvent->setDocumentId($doc['document_id']);
+                    $treeViewFilterEvent->setDocumentName($doc['document_name']);
+                    $treeViewFilterEvent->setCategoryId($id);
+                    $treeViewFilterEvent->setCategoryInfo($nodeInfo);
+                    $treeViewFilterEvent->setPid($patient_id);
+
+                    $htmlNode = new HTML_TreeNode(array(
+                        'text' => oeFormatShortDate($doc['docdate']) . ' ' . $doc['document_name'] . '-' . $doc['document_id'],
+                        'link' => $link,
+                        'icon' => $icon,
+                        'expandedIcon' => $expandedIcon
+                    ));
+
+                    $treeViewFilterEvent->setHtmlTreeNode($htmlNode);
+                    $filteredEvent = $GLOBALS['kernel']->getEventDispatcher()->dispatch($treeViewFilterEvent, PatientDocumentTreeViewFilterEvent::EVENT_NAME);
+                    if ($filteredEvent->getHtmlTreeNode() != null) {
+                        $current_node->addItem($filteredEvent->getHtmlTreeNode());
                     } else {
-                        $current_node->addItem(new HTML_TreeNode(array(
-                            'text' => oeFormatShortDate($doc['docdate']) . ' ' . $doc['document_name'] . '-' . $doc['document_id'],
-                            'link' => $link,
-                            'icon' => $icon,
-                            'expandedIcon' => $expandedIcon
-                        )));
+                        // add the original node if we got back nothing from the server
+                        $current_node->addItem($htmlNode);
                     }
                 }
             }
@@ -1145,8 +1203,8 @@ class C_Document extends Controller
         return $node;
     }
 
-    //function for logging  the errors in writing file to CouchDB/Hard Disk
-    function document_upload_download_log($patientid, $content)
+    //public function for logging  the errors in writing file to CouchDB/Hard Disk
+    public function document_upload_download_log($patientid, $content)
     {
         $log_path = $GLOBALS['OE_SITE_DIR'] . "/documents/couchdb/";
         $log_file = 'log.txt';
@@ -1170,7 +1228,7 @@ class C_Document extends Controller
         }
     }
 
-    function document_send($email, $body, $attfile, $pname)
+    public function document_send($email, $body, $attfile, $pname)
     {
         if (empty($email)) {
             $this->assign("process_result", "Email could not be sent, the address supplied: '$email' was empty or invalid.");
@@ -1206,8 +1264,8 @@ class C_Document extends Controller
 
         //$this->_last_node = &$node1;
 
-// Function to tag a document to an encounter.
-    function tag_action_process(string $patient_id = null, $document_id)
+// public function to tag a document to an encounter.
+    public function tag_action_process(string $patient_id = null, $document_id)
     {
         if ($_POST['process'] != "true") {
             die("process is '" . text($_POST['process']) . "', expected 'true'");
@@ -1275,7 +1333,7 @@ class C_Document extends Controller
         return $this->view_action($patient_id, $document_id);
     }
 
-    function image_procedure_action(string $patient_id = null, $document_id)
+    public function image_procedure_action(string $patient_id = null, $document_id)
     {
 
         $img_procedure_id = $_POST['image_procedure_id'];
@@ -1300,7 +1358,7 @@ class C_Document extends Controller
         return $this->view_action($patient_id, $document_id);
     }
 
-    function clear_procedure_tag_action(string $patient_id = null, $document_id)
+    public function clear_procedure_tag_action(string $patient_id = null, $document_id)
     {
         if (is_numeric($document_id)) {
             sqlStatement("delete from procedure_result where document_id = ?", $document_id);
@@ -1308,7 +1366,7 @@ class C_Document extends Controller
         return $this->view_action($patient_id, $document_id);
     }
 
-    function get_mapped_procedure($document_id)
+    public function get_mapped_procedure($document_id)
     {
         $map = array();
         if (is_numeric($document_id)) {
@@ -1321,11 +1379,12 @@ class C_Document extends Controller
         return $map;
     }
 
-    function image_result_indication($doc_id, $encounter, $image_procedure_id = 0)
+    public function image_result_indication($doc_id, $encounter, $image_procedure_id = 0)
     {
         $doc_notes = sqlQuery("select note from notes where foreign_id = ?", array($doc_id));
         $narration = isset($doc_notes['note']) ? 'With Narration' : 'Without Narration';
 
+        // TODO: This should be moved into a service so we can handle things such as uuid generation....
         if ($encounter != 0) {
             $ep = sqlQuery("select u.username as assigned_to from form_encounter inner join users u on u.id = provider_id where encounter = ?", array($encounter));
         } elseif ($image_procedure_id != 0) {
@@ -1339,12 +1398,26 @@ class C_Document extends Controller
         setGpRelation(1, $doc_id, 6, $noteid);
     }
 
-//clear encounter tag function
-    function clear_encounter_tag_action(string $patient_id = null, $document_id)
+//clear encounter tag public function
+    public function clear_encounter_tag_action(string $patient_id = null, $document_id)
     {
         if (is_numeric($document_id)) {
             sqlStatement("update documents set encounter_id='0' where foreign_id=? and id = ?", array($patient_id,$document_id));
         }
         return $this->view_action($patient_id, $document_id);
+    }
+
+    // this will set flag to skip acl check
+    // this is needed for when uploading via services that piggyback on any user (ie. the background services) or via cron/cli
+    public function skipAclCheck(): void
+    {
+        $this->skip_acl_check = true;
+    }
+
+    // this will check if flag has been set to skip the acl check
+    // this is needed for when uploading via services that piggyback on any user (ie. the background services) or via cron/cli
+    public function isSkipAclCheck(): bool
+    {
+        return $this->skip_acl_check;
     }
 }

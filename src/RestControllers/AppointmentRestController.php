@@ -12,8 +12,11 @@
 
 namespace OpenEMR\RestControllers;
 
-use OpenEMR\Services\AppointmentService;
+use OpenEMR\Common\Logging\SystemLogger;
 use OpenEMR\RestControllers\RestControllerHelper;
+use OpenEMR\Services\AppointmentService;
+use OpenEMR\Services\PatientService;
+use OpenEMR\Validators\ProcessingResult;
 
 class AppointmentRestController
 {
@@ -30,9 +33,29 @@ class AppointmentRestController
         return RestControllerHelper::responseHandler($serviceResult, null, 200);
     }
 
+    public function getOneForPatient($auuid, $patientUuid)
+    {
+        $serviceResult = $this->appointmentService->search(['puuid' => $patientUuid, 'pc_uuid' => $auuid]);
+        $data = ProcessingResult::extractDataArray($serviceResult);
+        return RestControllerHelper::responseHandler($data[0] ?? [], null, 200);
+    }
+
     public function getAll()
     {
         $serviceResult = $this->appointmentService->getAppointmentsForPatient(null);
+        return RestControllerHelper::responseHandler($serviceResult, null, 200);
+    }
+
+    public function getAllForPatientByUuid($puuid)
+    {
+        $patientService = new PatientService();
+        $result = ProcessingResult::extractDataArray($patientService->getOne($puuid));
+        if (!empty($result)) {
+            $serviceResult = $this->appointmentService->getAppointmentsForPatient($result[0]['pid']);
+        } else {
+            $serviceResult = [];
+        }
+
         return RestControllerHelper::responseHandler($serviceResult, null, 200);
     }
 
@@ -44,6 +67,7 @@ class AppointmentRestController
 
     public function post($pid, $data)
     {
+        $data['pid'] = $pid;
         $validationResult = $this->appointmentService->validate($data);
 
         $validationHandlerResult = RestControllerHelper::validationHandler($validationResult);
@@ -57,7 +81,13 @@ class AppointmentRestController
 
     public function delete($eid)
     {
-        $serviceResult = $this->appointmentService->delete($eid);
+        try {
+            $this->appointmentService->deleteAppointmentRecord($eid);
+            $serviceResult = ['message' => 'record deleted'];
+        } catch (\Exception $exception) {
+            (new SystemLogger())->errorLogCaller($exception->getMessage(), ['trace' => $exception->getTraceAsString(), 'eid' => $eid]);
+            return RestControllerHelper::responseHandler(['message' => 'Failed to delete appointment'], null, 500);
+        }
         return RestControllerHelper::responseHandler($serviceResult, null, 200);
     }
 }

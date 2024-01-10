@@ -24,9 +24,12 @@
  *
  *
  */
+
+//This provides a cross-platform alternative to strftime() for when it will be removed from PHP.
+use function PHP81_BC\strftime;
+
 class Savant3_Plugin_date extends Savant3_Plugin
 {
-
     /**
      *
      * The default strftime() format string.

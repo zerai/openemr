@@ -18,8 +18,15 @@
 
 require_once('../interface/globals.php');
 
-use OpenEMR\Core\Header;
+use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
+use OpenEMR\Core\Header;
+
+if (!AclMain::aclCheckCore('patients', 'docs')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Dicom Viewer")]);
+    exit;
+}
 
 $web_path = $_REQUEST['web_path'] ?? null;
 if ($web_path) {
@@ -41,7 +48,7 @@ if ($web_path) {
     <title><?php echo xlt("Dicom Viewer"); ?></title>
 
     <?php Header::setupHeader(['dwv', 'i18next', 'i18next-xhr-backend', 'i18next-browser-languagedetector', 'jszip', 'magic-wand', 'konva']); ?>
-    <script type="text/javascript" src="<?php echo $GLOBALS['assets_static_relative']; ?>/flot/jquery.flot.js"></script>
+    <script type="text/javascript" src="<?php echo $GLOBALS['assets_static_relative']; ?>/flot/dist/es5/jquery.flot.js"></script>
     <!-- Local (dwv) -->
     <script src="<?php echo $GLOBALS['web_root'] ?>/library/js/dwv/gui/browser.js"></script>
     <script src="<?php echo $GLOBALS['web_root'] ?>/library/js/dwv/gui/colourMap.js"></script>

@@ -20,7 +20,13 @@ require_once("$srcdir/options.inc.php");
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
+
+if (!AclMain::aclCheckCore('admin', 'practice')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Address Book")]);
+    exit;
+}
 
 if (!empty($_POST)) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
@@ -30,14 +36,15 @@ if (!empty($_POST)) {
 
 $popup = empty($_GET['popup']) ? 0 : 1;
 $rtn_selection = 0;
-if ($popup) {
-    $rtn_selection = $_GET['popup'] == 2 ? 1 : 0;
+if ((!empty($_GET['popup']) && $_GET['popup'] == 2) || (!empty($_POST['popup']) && $_POST['popup'] == 2)) {
+    $rtn_selection = 2;
 }
 
 $form_fname = trim($_POST['form_fname'] ?? '');
 $form_lname = trim($_POST['form_lname'] ?? '');
 $form_specialty = trim($_POST['form_specialty'] ?? '');
 $form_organization = trim($_POST['form_organization'] ?? '');
+$form_npi = trim($_POST['form_npi'] ?? '');
 $form_abook_type = trim($_REQUEST['form_abook_type'] ?? '');
 $form_external = !empty($_POST['form_external']) ? 1 : 0;
 
@@ -45,7 +52,7 @@ $sqlBindArray = array();
 $query = "SELECT u.*, lo.option_id AS ab_name, lo.option_value as ab_option FROM users AS u " .
   "LEFT JOIN list_options AS lo ON " .
   "list_id = 'abook_type' AND option_id = u.abook_type AND activity = 1 " .
-  "WHERE u.active = 1 AND ( u.authorized = 1 OR u.username = '' ) ";
+  "WHERE u.active = 1 AND ( u.authorized = 1 OR ( u.username = '' OR u.username IS NULL )) ";
 if ($form_organization) {
     $query .= "AND u.organization LIKE ? ";
     array_push($sqlBindArray, $form_organization . "%");
@@ -66,13 +73,18 @@ if ($form_specialty) {
     array_push($sqlBindArray, "%" . $form_specialty . "%");
 }
 
+if ($form_npi) {
+    $query .= "AND u.npi LIKE ? ";
+    array_push($sqlBindArray, "%" . $form_npi . "%");
+}
+
 if ($form_abook_type) {
     $query .= "AND u.abook_type LIKE ? ";
     array_push($sqlBindArray, $form_abook_type);
 }
 
 if ($form_external) {
-    $query .= "AND u.username = '' ";
+    $query .= "AND u.abook_type = 'external_provider' ";
 }
 
 if ($form_lname) {
@@ -109,7 +121,7 @@ $res = sqlStatement($query, $sqlBindArray);
 
         <form class='navbar-form' method='post' action='addrbook_list.php' onsubmit='return top.restoreSession()'>
             <input type="hidden" name="csrf_token_form" value="<?php echo attr(CsrfUtils::collectCsrfToken()); ?>" />
-
+            <input type="hidden" name="popup" value="<?php echo attr($rtn_selection); ?>" />
 
                 <div class="form-group">
                 <div class="row">
@@ -128,6 +140,10 @@ $res = sqlStatement($query, $sqlBindArray);
                     <div class="col-sm-2">
                     <label for="form_specialty"><?php echo xlt('Specialty') ?>:</label>
                     <input type='text' class="form-control inputtext" name='form_specialty' size='10' value='<?php echo attr($form_specialty); ?>' title='<?php echo xla("Any part of the desired specialty") ?>'/>&nbsp;
+                    </div>
+                    <div class="col-sm-2">
+                    <label for="form_npi"><?php echo xlt('Specialty') ?>:</label>
+                    <input type='text' class="form-control inputtext" name='form_npi' size='10' value='<?php echo attr($form_npi); ?>' title='<?php echo xla("Any part of the desired NPI") ?>'/>&nbsp;
                     </div>
                     <div class="col-sm-2">
                     <?php
@@ -153,6 +169,7 @@ $res = sqlStatement($query, $sqlBindArray);
   <th><?php echo xlt('Local'); ?></th><!-- empty for external -->
   <th><?php echo xlt('Type'); ?></th>
   <th><?php echo xlt('Specialty'); ?></th>
+  <th><?php echo xlt('NPI'); ?></th>
   <th><?php echo xlt('Phone(W)'); ?></th>
   <th><?php echo xlt('Mobile'); ?></th>
   <th><?php echo xlt('Fax'); ?></th>
@@ -192,6 +209,7 @@ while ($row = sqlFetchArray($res)) {
     echo "  <td>" . ($username ? '*' : '') . "</td>\n";
     echo "  <td>" . generate_display_field(array('data_type' => '1','list_id' => 'abook_type'), $row['ab_name']) . "</td>\n";
     echo "  <td>" . text($row['specialty']) . "</td>\n";
+    echo "  <td>" . text($row['npi'])       . "</td>\n";
     echo "  <td>" . text($row['phonew1'])   . "</td>\n";
     echo "  <td>" . text($row['phonecell']) . "</td>\n";
     echo "  <td>" . text($row['fax'])       . "</td>\n";
@@ -224,7 +242,12 @@ function refreshme() {
 // Process click to pop up the add window.
 function doedclick_add(type) {
  top.restoreSession();
- dlgopen('addrbook_edit.php?type=' + encodeURIComponent(type), '_blank', 650, (screen.availHeight * 75/100));
+ let url = 'addrbook_edit.php?type=' + encodeURIComponent(type);
+ const urlParams = new URLSearchParams(window.location.search);
+ if (urlParams.has("popup")) {
+    url += "&popup=" + urlParams.get("popup");
+ }
+ dlgopen(url, '_blank', 650, (screen.availHeight * 75/100));
 }
 
 // Process click to pop up the edit window.

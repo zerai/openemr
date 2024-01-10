@@ -16,7 +16,7 @@ namespace OpenEMR\Services;
 
 use Particle\Validator\Validator;
 
-class AddressService
+class AddressService extends BaseService
 {
     public function __construct()
     {
@@ -36,17 +36,35 @@ class AddressService
         return $validator->validate($insuranceCompany);
     }
 
-
-    public function getFreshId()
+    public function getAddressFromRecordAsString(array $addressRecord)
     {
-        $id = sqlQuery("SELECT MAX(id)+1 AS id FROM addresses");
-
-        return $id['id'];
+        // works for patients and users
+        $address = [];
+        if (!empty($addressRecord['street'])) {
+            $address[] = $addressRecord['street'];
+            $address[] = "\n";
+        }
+        if (!empty($addressRecord['city'])) {
+            $address[] = $addressRecord['city'];
+            $address[] = ", ";
+        }
+        if (!empty($addressRecord['state'])) {
+            $address[] = $addressRecord['state'];
+            $address[] = " ";
+        }
+        if (!empty($addressRecord['postal_code'])) {
+            $address[] = $addressRecord['postal_code'];
+            $address[] = " ";
+        }
+        if (!empty($addressRecord['country_code'])) {
+            $address[] = $addressRecord['country_code'];
+        }
+        return implode("", $address);
     }
 
     public function insert($data, $foreignId)
     {
-        $freshId = $this->getFreshId();
+        $freshId = $this->getFreshId("id", "addresses");
 
         $addressesSql  = " INSERT INTO addresses SET";
         $addressesSql .= "     id=?,";
@@ -110,5 +128,11 @@ class AddressService
         $addressIdSqlResults = sqlQuery("SELECT id FROM addresses WHERE foreign_id=?", $foreignId);
 
         return $addressIdSqlResults["id"];
+    }
+
+    public function getOneByForeignId($foreignId)
+    {
+        $sql = "SELECT * FROM addresses WHERE foreign_id=?";
+        return sqlQuery($sql, array($foreignId));
     }
 }

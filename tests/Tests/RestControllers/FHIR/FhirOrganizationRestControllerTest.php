@@ -17,9 +17,16 @@ use OpenEMR\Tests\Fixtures\FacilityFixtureManager;
  */
 class FhirOrganizationRestControllerTest extends TestCase
 {
-
+    /**
+     * @var FhirOrganizationRestController
+     */
     private $fhirOrganizationController;
+
+    /*
+     * FacilityFixtureManager
+     */
     private $fixtureManager;
+
     private $fhirFixture;
 
     protected function setUp(): void
@@ -34,7 +41,7 @@ class FhirOrganizationRestControllerTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->fixtureManager->removeFacilityFixtures();
+        $this->fixtureManager->removeFixtures();
     }
 
     /**
@@ -44,9 +51,7 @@ class FhirOrganizationRestControllerTest extends TestCase
     {
         $actualResult = $this->fhirOrganizationController->post($this->fhirFixture);
         $this->assertEquals(201, http_response_code());
-        $this->assertEquals(0, count($actualResult['validationErrors']));
-        $this->assertEquals(0, count($actualResult['internalErrors']));
-        $this->assertEquals(2, count($actualResult['data']));
+        $this->assertNotEmpty($actualResult['uuid']);
     }
 
     /**
@@ -59,8 +64,6 @@ class FhirOrganizationRestControllerTest extends TestCase
         $actualResult = $this->fhirOrganizationController->post($this->fhirFixture);
         $this->assertEquals(400, http_response_code());
         $this->assertGreaterThan(0, count($actualResult['validationErrors']));
-        $this->assertEquals(0, count($actualResult['internalErrors']));
-        $this->assertEmpty($actualResult['data']);
     }
 
     /**
@@ -69,15 +72,13 @@ class FhirOrganizationRestControllerTest extends TestCase
     public function testPatch()
     {
         $actualResult = $this->fhirOrganizationController->post($this->fhirFixture);
-        $fhirId = $actualResult['data']['uuid'];
+        $fhirId = $actualResult['uuid'];
 
         $this->fhirFixture['name'] = 'test-fixture-Glenmark Clinic';
         $actualResult = $this->fhirOrganizationController->patch($fhirId, $this->fhirFixture);
 
         $this->assertEquals(200, http_response_code());
-        $this->assertEquals(0, count($actualResult['validationErrors']));
-        $this->assertEquals(0, count($actualResult['internalErrors']));
-        $this->assertEquals($fhirId, $actualResult['data']->getId());
+        $this->assertEquals($fhirId, $actualResult->getId());
     }
 
     /**
@@ -92,17 +93,16 @@ class FhirOrganizationRestControllerTest extends TestCase
 
         $this->assertEquals(400, http_response_code());
         $this->assertGreaterThan(0, count($actualResult['validationErrors']));
-        $this->assertEquals(0, count($actualResult['internalErrors']));
-        $this->assertEmpty($actualResult['data']);
     }
 
     public function testGetOne()
     {
         $actualResult = $this->fhirOrganizationController->post($this->fhirFixture);
-        $fhirId = $actualResult['data']['uuid'];
+        $fhirId = $actualResult['uuid'];
 
         $actualResult = $this->fhirOrganizationController->getOne($fhirId);
-        $this->assertEquals($fhirId, $actualResult['data']->getId());
+        $this->assertNotEmpty($actualResult, "getOne() should have returned a result");
+        $this->assertEquals($fhirId, $actualResult->getId());
     }
 
     public function testGetOneNoMatch()
@@ -110,7 +110,7 @@ class FhirOrganizationRestControllerTest extends TestCase
         $this->fhirOrganizationController->post($this->fhirFixture);
 
         $actualResult = $this->fhirOrganizationController->getOne("not-a-matching-uuid");
-        $this->assertEmpty($actualResult['data']);
+        $this->assertEquals(1, count($actualResult['validationErrors']));
     }
 
     public function testGetAll()
@@ -122,8 +122,8 @@ class FhirOrganizationRestControllerTest extends TestCase
         $this->assertNotEmpty($actualResults);
 
         foreach ($actualResults->getEntry() as $index => $bundleEntry) {
-            $this->assertObjectHasAttribute('fullUrl', $bundleEntry);
-            $this->assertObjectHasAttribute('resource', $bundleEntry);
+            $this->assertObjectHasProperty('fullUrl', $bundleEntry);
+            $this->assertObjectHasProperty('resource', $bundleEntry);
         }
     }
 }

@@ -43,7 +43,7 @@ class Documents extends AbstractPlugin
      * @param  String $encryption_key Key for Document Encryption
      * @return String File Content
      */
-    public function getDocument($documentId, $doEncryption = false, $encryption_key = '')
+    public static function getDocument($documentId, $doEncryption = false, $encryption_key = '')
     {
                 $obj = new \C_Document();
                 $document = $obj->retrieve_action("", $documentId, true, true, true);
@@ -61,7 +61,7 @@ class Documents extends AbstractPlugin
         $count  = 0;
         $module = array();
         foreach ($result as $row) {
-            $content = $this->getDocument($row['id']);
+            $content = self::getDocument($row['id']);
             $module[$count]['doc_id']   = $row['id'];
             if (preg_match("/<ClinicalDocument/", $content)) {
                 if (preg_match("/2.16.840.1.113883.3.88.11.32.1/", $content)) {

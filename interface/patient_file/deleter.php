@@ -30,14 +30,14 @@ if (!empty($_GET)) {
     }
 }
 
-$patient     = $_REQUEST['patient'];
-$encounterid = $_REQUEST['encounterid'];
-$formid      = $_REQUEST['formid'];
-$issue       = $_REQUEST['issue'];
-$document    = $_REQUEST['document'];
-$payment     = $_REQUEST['payment'];
-$billing     = $_REQUEST['billing'];
-$transaction = $_REQUEST['transaction'];
+$patient     = $_REQUEST['patient'] ?? '';
+$encounterid = $_REQUEST['encounterid'] ?? '';
+$formid      = $_REQUEST['formid'] ?? '';
+$issue       = $_REQUEST['issue'] ?? '';
+$document    = $_REQUEST['document'] ?? '';
+$payment     = $_REQUEST['payment'] ?? '';
+$billing     = $_REQUEST['billing'] ?? '';
+$transaction = $_REQUEST['transaction'] ?? '';
 
 $info_msg = "";
 
@@ -150,7 +150,7 @@ function form_delete($formdir, $formid, $patient_id, $encounter_id)
         $tres = sqlStatement("SELECT procedure_report_id FROM procedure_report " .
         "WHERE procedure_order_id = ?", array($formid));
         while ($trow = sqlFetchArray($tres)) {
-            $reportid = 0 + $trow['procedure_report_id'];
+            $reportid = (int)$trow['procedure_report_id'];
             row_delete("procedure_result", "procedure_report_id = '" . add_escape_custom($reportid) . "'");
         }
 
@@ -208,7 +208,7 @@ function popup_close() {
         <?php
         // If the delete is confirmed...
         //
-        if ($_POST['form_submit']) {
+        if (!empty($_POST['form_submit'])) {
             if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
                 CsrfUtils::csrfNotVerified();
             }
@@ -233,13 +233,17 @@ function popup_close() {
                 row_delete("employer_data", "pid = '" . add_escape_custom($patient) . "'");
                 row_delete("history_data", "pid = '" . add_escape_custom($patient) . "'");
                 row_delete("insurance_data", "pid = '" . add_escape_custom($patient) . "'");
+                row_delete("patient_history", "pid = '" . add_escape_custom($patient) . "'");
 
                 $res = sqlStatement("SELECT * FROM forms WHERE pid = ?", array($patient));
                 while ($row = sqlFetchArray($res)) {
-                    form_delete($row['formdir'], $row['form_id'], $row['pid'], $row['encounter']);
+                    row_modify(
+                        "forms",
+                        "deleted = 1",
+                        "pid = '" . add_escape_custom($row['pid']) .
+                            "' AND form_id = '" . add_escape_custom($row['form_id']) . "'"
+                    );
                 }
-
-                row_delete("forms", "pid = '" . add_escape_custom($patient) . "'");
 
                 // Delete all documents for the patient.
                 $res = sqlStatement("SELECT id FROM documents WHERE foreign_id = ? AND deleted = 0", array($patient));
@@ -284,6 +288,7 @@ function popup_close() {
                 $ids = explode(",", $issue);
                 foreach ($ids as $id) {
                     row_delete("issue_encounter", "list_id = '" . add_escape_custom($id) . "'");
+                    row_delete("lists_medication", "list_id = '" . add_escape_custom($id) . "'");
                     row_delete("lists", "id = '" . add_escape_custom($id) . "'");
                 }
             } elseif ($document) {
@@ -430,9 +435,21 @@ function popup_close() {
             echo "<script>\n";
             if (!$encounterid) {
                 if ($info_msg) {
-                    echo " alert(" . json_encode($info_msg) . ");\n";
+                    echo "let message = " . js_escape($info_msg) . ";
+                    (async (message, time) => {
+                    await asyncAlertMsg(message, time, 'success', 'lg');
+                    })(message, 2000)
+                    .then(res => {";
+                    // auto close on msg timeout with just enough time to show success or errors.
+                    if ($GLOBALS['sql_string_no_show_screen']) {
+                        echo "dlgclose();";
+                    }
+                    echo "});"; // close function.
+                    // any close will call below.
+                    echo " opener.dlgSetCallBack('imdeleted', false);\n";
+                } else {
+                    echo " dlgclose('imdeleted', false);\n";
                 }
-                echo " dlgclose('imdeleted',false);\n";
             } else {
                 if ($GLOBALS['sql_string_no_show_screen']) {
                     echo " dlgclose('imdeleted', " . js_escape($encounterid) . ");\n";

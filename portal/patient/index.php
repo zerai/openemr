@@ -9,9 +9,9 @@
 
 //require_once ("./../verify_session.php");
 /* GlobalConfig object contains all configuration information for the app */
-include_once("_global_config.php");
-include_once("_app_config.php");
-@include_once("_machine_config.php"); // This include auth any framework calls
+require_once("_global_config.php");
+require_once("_app_config.php");
+require_once("_machine_config.php"); // This include auth any framework calls
 
 if (!GlobalConfig::$CONNECTION_SETTING) {
     throw new Exception('GlobalConfig::$CONNECTION_SETTING is not configured.  Are you missing _machine_config.php?');
@@ -24,6 +24,12 @@ require_once("verysimple/Phreeze/Dispatcher.php");
 $gc = GlobalConfig::GetInstance();
 
 try {
+    if (!empty($_SESSION['register'])) {
+        // Need to bootstrap for registration
+        $GLOBALS['bootstrap_register'] = true;
+    } else {
+        $GLOBALS['bootstrap_register'] = false;
+    }
     if (isset($_SESSION['pid']) && (isset($_SESSION['patient_portal_onsite_two']))) {
         // Need to bootstrap all requests to only allow the pid in $_SESSION['pid']
         //  and to only allow access to api calls applicable to that pid (or patientId).

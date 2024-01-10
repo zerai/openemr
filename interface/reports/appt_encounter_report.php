@@ -29,14 +29,21 @@
  */
 
 require_once("../globals.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once("../../custom/code_types.inc.php");
 
-
 use OpenEMR\Billing\BillingUtilities;
+use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
+use OpenEMR\Common\Utils\FormatMoney;
 use OpenEMR\Core\Header;
 use OpenEMR\Services\FacilityService;
+
+if (!AclMain::aclCheckCore('acct', 'rep_a')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Appointments and Encounters")]);
+    exit;
+}
 
 if (!empty($_POST)) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
@@ -62,13 +69,6 @@ function postError($msg)
     $errmsg .= text($msg);
 }
 
-function bucks($amount)
-{
-    if ($amount) {
-        return oeFormatMoney($amount);
-    }
-}
-
 function endDoctor(&$docrow)
 {
     global $grand_total_charges, $grand_total_copays, $grand_total_encounters;
@@ -85,12 +85,12 @@ function endDoctor(&$docrow)
     echo "  </td>\n";
     echo "  <td align='right'>\n";
     echo "   &nbsp;";
-    echo text(bucks($docrow['charges']));
+    echo text(FormatMoney::getBucks($docrow['charges']));
     echo "&nbsp;\n";
     echo "  </td>\n";
     echo "  <td align='right'>\n";
     echo "   &nbsp;";
-    echo text(bucks($docrow['copays']));
+    echo text(FormatMoney::getBucks($docrow['copays']));
     echo "&nbsp;\n";
     echo "  </td>\n";
     echo "  <td colspan='2'>\n";
@@ -490,7 +490,7 @@ if (!empty($_POST['form_refresh'])) {
                 ++$docrow['encounters'];
             }
 
-            if ($_POST['form_details']) {
+            if (!empty($_POST['form_details'])) {
                 ?>
          <tr>
           <td>
@@ -524,10 +524,10 @@ if (!empty($_POST['form_refresh'])) {
                 <?php echo text($encounter); ?>&nbsp;
          </td>
          <td align='right'>
-                <?php echo text(bucks($charges)); ?>&nbsp;
+                <?php echo text(FormatMoney::getBucks($charges)); ?>&nbsp;
          </td>
          <td align='right'>
-                <?php echo text(bucks($copays)); ?>&nbsp;
+                <?php echo text(FormatMoney::getBucks($copays)); ?>&nbsp;
          </td>
          <td>
                 <?php echo text($billed); ?>
@@ -553,12 +553,12 @@ if (!empty($_POST['form_refresh'])) {
         echo "  </td>\n";
         echo "  <td align='right'>\n";
         echo "   &nbsp;";
-        echo text(bucks($grand_total_charges));
+        echo text(FormatMoney::getBucks($grand_total_charges));
         echo "&nbsp;\n";
         echo "  </td>\n";
         echo "  <td align='right'>\n";
         echo "   &nbsp;";
-        echo text(bucks($grand_total_copays));
+        echo text(FormatMoney::getBucks($grand_total_copays));
         echo "&nbsp;\n";
         echo "  </td>\n";
         echo "  <td colspan='2'>\n";

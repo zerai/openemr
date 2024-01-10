@@ -16,11 +16,26 @@ require_once("../../globals.php");
 require_once("$srcdir/options.inc.php");
 require_once("$srcdir/reminders.php");
 require_once("$srcdir/clinical_rules.php");
-require_once "$srcdir/report_database.inc";
+require_once "$srcdir/report_database.inc.php";
 
+use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
 use OpenEMR\Core\Header;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\OeUI\OemrUI;
+
+$thisauth = true;
+if (($_GET['mode'] == 'admin') && !AclMain::aclCheckCore('admin', 'super')) {
+    $thisauth = false;
+}
+if (($_GET['mode'] != 'admin') && !AclMain::aclCheckCore('patients', 'reminder', '', 'write')) {
+    $thisauth = false;
+}
+if (!$thisauth) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Patient Reminders")]);
+    exit;
+}
+
 ?>
 
 <html>
@@ -40,9 +55,9 @@ use OpenEMR\OeUI\OemrUI;
 <?php
 $patient_id = ($_GET['patient_id']) ? $_GET['patient_id'] : "";
 $mode = ($_GET['mode']) ? $_GET['mode'] : "simple";
-$sortby = $_GET['sortby'];
-$sortorder = $_GET['sortorder'];
-$begin = $_GET['begin'];
+$sortby = $_GET['sortby'] ?? null;
+$sortorder = $_GET['sortorder'] ?? null;
+$begin = $_GET['begin'] ?? null;
 
 if (!empty($patient_id)) {
     //Only update one patient
@@ -149,7 +164,7 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
 
                 $sql = "SELECT a.id, a.due_status, a.category, a.item, a.date_created, a.date_sent, b.fname, b.lname " .
                   "FROM `patient_reminders` as a, `patient_data` as b " .
-                  "WHERE a.active='1' AND a.pid=b.pid " . $add_sql;
+                  "WHERE a.active='1' AND a.pid=b.pid " . ($add_sql ?? '');
                 $result = sqlStatement($sql, $sqlBindArray);
                 if (sqlNumRows($result) != 0) {
                     $total = sqlNumRows($result);
@@ -262,7 +277,7 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                     $sql = "SELECT a.id, a.due_status, a.category, a.item, a.date_created, a.date_sent, a.voice_status, " .
                                 "a.sms_status, a.email_status, a.mail_status, b.fname, b.lname, b.hipaa_allowemail, b.hipaa_allowsms " .
                     "FROM `patient_reminders` as a, `patient_data` as b " .
-                    "WHERE a.active='1' AND a.pid=b.pid " . $add_sql .
+                    "WHERE a.active='1' AND a.pid=b.pid " . ($add_sql ?? '') .
                     "ORDER BY " . $escapedsortby . " " .
                       escape_sort_order($sortorder) . " " .
                     "LIMIT " . escape_limit($begin) . ", " .

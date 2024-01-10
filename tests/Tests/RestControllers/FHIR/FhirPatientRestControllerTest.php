@@ -12,7 +12,6 @@ use OpenEMR\Tests\Fixtures\FixtureManager;
 
 class FhirPatientRestControllerTest extends TestCase
 {
-
     private $fhirPatientController;
     private $fixtureManager;
     private $fhirFixture;
@@ -40,9 +39,7 @@ class FhirPatientRestControllerTest extends TestCase
     {
         $actualResult = $this->fhirPatientController->post($this->fhirFixture);
         $this->assertEquals(201, http_response_code());
-        $this->assertEquals(0, count($actualResult['validationErrors']));
-        $this->assertEquals(0, count($actualResult['internalErrors']));
-        $this->assertEquals(2, count($actualResult['data']));
+        $this->assertNotEmpty($actualResult['uuid']);
     }
 
     /**
@@ -55,8 +52,6 @@ class FhirPatientRestControllerTest extends TestCase
         $actualResult = $this->fhirPatientController->post($this->fhirFixture);
         $this->assertEquals(400, http_response_code());
         $this->assertGreaterThan(0, count($actualResult['validationErrors']));
-        $this->assertEquals(0, count($actualResult['internalErrors']));
-        $this->assertEmpty($actualResult['data']);
     }
 
     /**
@@ -65,15 +60,13 @@ class FhirPatientRestControllerTest extends TestCase
     public function testPut()
     {
         $actualResult = $this->fhirPatientController->post($this->fhirFixture);
-        $fhirId = $actualResult['data']['uuid'];
+        $fhirId = $actualResult['uuid'];
 
         $this->fhirFixture['name'][0]['family'] = 'Smithers';
         $actualResult = $this->fhirPatientController->put($fhirId, $this->fhirFixture);
 
         $this->assertEquals(200, http_response_code());
-        $this->assertEquals(0, count($actualResult['validationErrors']));
-        $this->assertEquals(0, count($actualResult['internalErrors']));
-        $this->assertEquals($fhirId, $actualResult['data']->getId());
+        $this->assertEquals($fhirId, $actualResult->getId());
     }
 
     /**
@@ -88,17 +81,15 @@ class FhirPatientRestControllerTest extends TestCase
 
         $this->assertEquals(400, http_response_code());
         $this->assertGreaterThan(0, count($actualResult['validationErrors']));
-        $this->assertEquals(0, count($actualResult['internalErrors']));
-        $this->assertEmpty($actualResult['data']);
     }
 
     public function testGetOne()
     {
         $actualResult = $this->fhirPatientController->post($this->fhirFixture);
-        $fhirId = $actualResult['data']['uuid'];
+        $fhirId = $actualResult['uuid'];
 
         $actualResult = $this->fhirPatientController->getOne($fhirId);
-        $this->assertEquals($fhirId, $actualResult['data']->getId());
+        $this->assertEquals($fhirId, $actualResult->getId());
     }
 
     public function testGetOneNoMatch()
@@ -106,7 +97,7 @@ class FhirPatientRestControllerTest extends TestCase
         $this->fhirPatientController->post($this->fhirFixture);
 
         $actualResult = $this->fhirPatientController->getOne("not-a-matching-uuid");
-        $this->assertEmpty($actualResult['data']);
+        $this->assertGreaterThan(0, count($actualResult['validationErrors']));
     }
 
     public function testGetAll()
@@ -118,8 +109,8 @@ class FhirPatientRestControllerTest extends TestCase
         $this->assertNotEmpty($actualResults);
 
         foreach ($actualResults->getEntry() as $index => $bundleEntry) {
-            $this->assertObjectHasAttribute('fullUrl', $bundleEntry);
-            $this->assertObjectHasAttribute('resource', $bundleEntry);
+            $this->assertObjectHasProperty('fullUrl', $bundleEntry);
+            $this->assertObjectHasProperty('resource', $bundleEntry);
         }
     }
 }

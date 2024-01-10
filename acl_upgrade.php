@@ -7,7 +7,7 @@
  * Access Control Objects(ACO), Groups(ARO), and Access Control
  * Lists(ACL) to the most recent version.
  * It will display whether each update already exist
- * or if it was updated succesfully.
+ * or if it was updated successfully.
  * To avoid reversing customizations, upgrade is done in versions,
  * which are recorded in the database. To add another version of
  * changes, use the following template:
@@ -40,77 +40,7 @@
  * }
  * </pre>
  *
- * Updates included:
- *  <pre>---VERSION 1 ACL---
- *   2.8.2
- *     Section "sensitivities" (Sensitivities):
- *       ADD  normal   Normal              (Administrators, Physicians, Clinicians(addonly))
- *       ADD  high     High                (Administrators, Physicians)
- *     Section "admin"         (Administration):
- *       ADD  super    Superuser           (Adminstrators)
- *   2.8.4
- *     Section "admin"         (Administration):
- *       ADD  drugs    Pharmacy Dispensary (Administrators, Physicians, Clinicians(write))
- *       ADD  acl      ACL Administration (Administrators)
- *     Section "sensitivities" (Sensitivities):
- *       EDIT high     High               (ensure the order variable is '20')
- *     Section "acct"          (Accounting):
- *       ADD  disc     Price Discounting (Administrators, Physicians, Accounting(write))
- *   3.0.2
- *     ADD Section "lists" (Lists):
- *       ADD  default   Default List (write,addonly optional)  (Administrators)
- *       ADD  state     State List (write,addonly optional)  (Administrators)
- *       ADD  country   Country List (write,addonly optional)  (Administrators)
- *       ADD  language  Language List (write,addonly optional)  (Administrators)
- *       ADD  ethrace   Ethnicity-Race List (write,addonly optional)  (Administrators)
- *     ADD Section "placeholder" (Placeholder):
- *       ADD  filler    Placeholder (Maintains empty ACLs)
- *     ACL/Group  doc   addonly  "Physicians"   (filler aco)
- *     ACL/Group  front addonly  "Front Office" (filler aco)
- *     ACL/Group  back  addonly  "Accounting"   (filler aco)
- *   3.3.0
- *     Section "patients" (Patients):
- *       ADD  sign  Sign Lab Results (Physicians)
- *     ACL/Group  breakglass  write  "Emergency Login"  (added all aco's to it)
- *   4.1.0
- *     Section "nationnotes" (Nation Notes):
- *       ADD  nn_configure  Nation Notes Configure  (Administrators, Emergency Login)
- *     Section "patientportal" (Patient Portal):
- *       ADD  portal    Patient Portal     (Administrators, Emergency Login)
- *   4.1.1
- *     ACL/Group  doc   wsome  "Physicians"   (filler aco)
- *     ACL/Group  clin  wsome  "Clinicians"   (filler aco)
- *     ACL/Group  front wsome  "Front Office" (filler aco)
- *     ACL/Group  back  wsome  "Accounting"   (filler aco)
- *     ACL/Group  doc   view   "Physicians"   (filler aco)
- *     ACL/Group  clin  view   "Clinicians"   (filler aco)
- *     ACL/Group  front view   "Front Office" (filler aco)
- *     ACL/Group  back  view   "Accounting"   (filler aco)
- *   4.1.3
- *     Section "menus" (Menus):
- *       ADD modle Module (Administrators, Emergency Login)
- *   5.0.1
- *     Section "patients" (Patients):
- *       ADD  reminder    Patient Reminders         (Physicians,Clinicians(addonly))
- *       ADD  alert       Clinical Reminders/Alerts (Physicians,Clinicians,Front Office(view),Accounting(view))
- *       ADD  disclosure  Disclosures               (Physicians,Clinicians(addonly))
- *       ADD  rx          Prescriptions             (Physicians,Clinicians(addonly))
- *       ADD  amendment   Amendments                (Physicians,Clinicians(addonly))
- *       ADD  lab         Lab Results               (Physicians,Clinicians(addonly))
- *       ADD  docs_rm     Documents Delete          (Administrators)
- *     Section "admin" (Administration):
- *       ADD  multipledb  Multipledb                (Administrators)
- *       ADD  menu        Menu                      (Administrators)
- *     Section "groups" (Groups):
- *       ADD  gadd        View/Add/Update groups    (Administrators)
- *       ADD  gcalendar   View/Create/Update groups appointment in calendar (Administrators,Physicians,Clinicians)
- *       ADD  glog        Group encounter log       (Administrators,Physicians, Clinicians)
- *       ADD  gdlog       Group detailed log of appointment in patient record (Administrators)
- *       ADD  gm          Send message from the permanent group therapist to the personal therapist (Administrators)
- *   5.0.2
- *     Section "patients" (Patients):
- *       ADD  pat_rep     Patient Report            (Administrators)
- * </pre>
+ * See header in src/Common/Acl/AclMain.php for list of ACOs
  *
  * @package   OpenEMR
  * @link      http://www.open-emr.org
@@ -728,14 +658,71 @@ if ($acl_version < $upgrade_acl) {
     $acl_version = $upgrade_acl;
 }
 
-/* This is a template for a new revision, when needed
 // Upgrade for acl_version 10
 $upgrade_acl = 10;
 if ($acl_version < $upgrade_acl) {
-    echo "<B>UPGRADING ACCESS CONTROLS TO VERSION ".$upgrade_acl.":</B></BR>";
+    echo "<B>UPGRADING ACCESS CONTROLS TO VERSION " . $upgrade_acl . ":</B></BR>";
 
     //Collect the ACL ID numbers.
     echo "<B>Checking to ensure all the proper ACL(access control list) are present:</B></BR>";
+    $admin_write = AclExtended::getAclIdNumber('Administrators', 'write');
+    $emergency_write = AclExtended::getAclIdNumber('Emergency Login', 'write');
+
+    //Add new object Sections
+    echo "<BR/><B>Adding new object sections</B><BR/>";
+    AclExtended::addObjectSectionAcl('inventory', 'Inventory');
+
+    //Add new Objects
+    echo "<BR/><B>Adding new objects</B><BR/>";
+    AclExtended::addObjectAcl('inventory', 'Inventory', 'lots', 'Lots');
+    AclExtended::addObjectAcl('inventory', 'Inventory', 'sales', 'Sales');
+    AclExtended::addObjectAcl('inventory', 'Inventory', 'purchases', 'Purchases');
+    AclExtended::addObjectAcl('inventory', 'Inventory', 'transfers', 'Transfers');
+    AclExtended::addObjectAcl('inventory', 'Inventory', 'adjustments', 'Adjustments');
+    AclExtended::addObjectAcl('inventory', 'Inventory', 'consumption', 'Consumption');
+    AclExtended::addObjectAcl('inventory', 'Inventory', 'destruction', 'Destruction');
+    AclExtended::addObjectAcl('inventory', 'Inventory', 'reporting', 'Reporting');
+
+    //Update already existing Objects
+    echo "<BR/><B>Upgrading objects</B><BR/>";
+    //Rename "Pharmacy Dispensary" to "Inventory Administration".
+    AclExtended::editObjectAcl('admin', 'Administration', 'drugs', 'Inventory Administration', 10);
+
+    //Add new ACLs here (will return the ACL ID of newly created or already existant ACL)
+    // (will also place in the appropriate group and CREATE a new group if needed)
+    echo "<BR/><B>Adding ACLs(Access Control Lists) and groups</B><BR/>";
+
+    //Update the ACLs
+    echo "<BR/><B>Updating the ACLs(Access Control Lists)</B><BR/>";
+    AclExtended::updateAcl($admin_write, 'Administrators', 'inventory', 'Inventory', 'lots', 'Lots', 'write');
+    AclExtended::updateAcl($admin_write, 'Administrators', 'inventory', 'Inventory', 'sales', 'Sales', 'write');
+    AclExtended::updateAcl($admin_write, 'Administrators', 'inventory', 'Inventory', 'purchases', 'Purchases', 'write');
+    AclExtended::updateAcl($admin_write, 'Administrators', 'inventory', 'Inventory', 'transfers', 'Transfers', 'write');
+    AclExtended::updateAcl($admin_write, 'Administrators', 'inventory', 'Inventory', 'adjustments', 'Adjustments', 'write');
+    AclExtended::updateAcl($admin_write, 'Administrators', 'inventory', 'Inventory', 'consumption', 'Consumption', 'write');
+    AclExtended::updateAcl($admin_write, 'Administrators', 'inventory', 'Inventory', 'destruction', 'Destruction', 'write');
+    AclExtended::updateAcl($admin_write, 'Administrators', 'inventory', 'Inventory', 'reporting', 'Reporting', 'write');
+    AclExtended::updateAcl($emergency_write, 'Emergency Login', 'inventory', 'Inventory', 'lots', 'Lots', 'write');
+    AclExtended::updateAcl($emergency_write, 'Emergency Login', 'inventory', 'Inventory', 'sales', 'Sales', 'write');
+    AclExtended::updateAcl($emergency_write, 'Emergency Login', 'inventory', 'Inventory', 'purchases', 'Purchases', 'write');
+    AclExtended::updateAcl($emergency_write, 'Emergency Login', 'inventory', 'Inventory', 'transfers', 'Transfers', 'write');
+    AclExtended::updateAcl($emergency_write, 'Emergency Login', 'inventory', 'Inventory', 'adjustments', 'Adjustments', 'write');
+    AclExtended::updateAcl($emergency_write, 'Emergency Login', 'inventory', 'Inventory', 'consumption', 'Consumption', 'write');
+    AclExtended::updateAcl($emergency_write, 'Emergency Login', 'inventory', 'Inventory', 'destruction', 'Destruction', 'write');
+    AclExtended::updateAcl($emergency_write, 'Emergency Login', 'inventory', 'Inventory', 'reporting', 'Reporting', 'write');
+
+    //DONE with upgrading to this version
+    $acl_version = $upgrade_acl;
+}
+
+// Upgrade for acl_version 11
+$upgrade_acl = 11;
+if ($acl_version < $upgrade_acl) {
+    echo "<B>UPGRADING ACCESS CONTROLS TO VERSION " . $upgrade_acl . ":</B></BR>";
+
+    //Collect the ACL ID numbers.
+    echo "<B>Checking to ensure all the proper ACL(access control list) are present:</B></BR>";
+    $clin_write = AclExtended::getAclIdNumber('Clinicians', 'write');
 
     //Add new object Sections
     echo "<BR/><B>Adding new object sections</B><BR/>";
@@ -752,17 +739,54 @@ if ($acl_version < $upgrade_acl) {
 
     //Update the ACLs
     echo "<BR/><B>Updating the ACLs(Access Control Lists)</B><BR/>";
+    AclExtended::updateAcl($clin_write, 'Clinicians', 'encounters', 'Encounters', 'auth', 'Authorize - my encounters', 'write');
+    AclExtended::updateAcl($clin_write, 'Clinicians', 'encounters', 'Encounters', 'notes', 'Notes - my encounters (write,addonly optional)', 'write');
 
     //DONE with upgrading to this version
     $acl_version = $upgrade_acl;
 }
-*/
+
+// Upgrade for acl_version 12
+$upgrade_acl = 12;
+if ($acl_version < $upgrade_acl) {
+    echo "<B>UPGRADING ACCESS CONTROLS TO VERSION " . $upgrade_acl . ":</B></BR>";
+
+    //Collect the ACL ID numbers.
+    echo "<B>Checking to ensure all the proper ACL(access control list) are present:</B></BR>";
+    $accounting_view = AclExtended::getAclIdNumber('Accounting', 'view');
+    $frontoffice_view = AclExtended::getAclIdNumber('Front Office', 'view');
+    $frontoffice_write = AclExtended::getAclIdNumber('Front Office', 'write');
+
+    //Add new object Sections
+    echo "<BR/><B>Adding new object sections</B><BR/>";
+
+    //Add new Objects
+    echo "<BR/><B>Adding new objects</B><BR/>";
+
+    //Update already existing Objects
+    echo "<BR/><B>Upgrading objects</B><BR/>";
+
+    //Add new ACLs here (will return the ACL ID of newly created or already existant ACL)
+    // (will also place in the appropriate group and CREATE a new group if needed)
+    echo "<BR/><B>Adding ACLs(Access Control Lists) and groups</B><BR/>";
+
+    //Update the ACLs
+    echo "<BR/><B>Updating the ACLs(Access Control Lists)</B><BR/>";
+    AclExtended::shiftAcl($accounting_view, 'Accounting', 'patients', 'Patients', 'pat_rep', 'Patient Report', 'view');
+    AclExtended::shiftAcl($frontoffice_view, 'Front Office', 'patients', 'Patients', 'pat_rep', 'Patient Report', 'view');
+    AclExtended::shiftAcl($frontoffice_write, 'Front Office', 'patients', 'Patients', 'trans', 'Transactions (write,wsome optional)', 'write');
+    AclExtended::shiftAcl($frontoffice_write, 'Front Office', 'patients', 'Patients', 'notes', 'Patient Notes (write,wsome optional)', 'write');
+
+
+    //DONE with upgrading to this version
+    $acl_version = $upgrade_acl;
+}
 
 /* This is a template for a new revision, when needed
-// Upgrade for acl_version 11
-$upgrade_acl = 11;
+// Upgrade for acl_version 13
+$upgrade_acl = 13;
 if ($acl_version < $upgrade_acl) {
-    echo "<B>UPGRADING ACCESS CONTROLS TO VERSION ".$upgrade_acl.":</B></BR>";
+    echo "<B>UPGRADING ACCESS CONTROLS TO VERSION " . $upgrade_acl . ":</B></BR>";
 
     //Collect the ACL ID numbers.
     echo "<B>Checking to ensure all the proper ACL(access control list) are present:</B></BR>";

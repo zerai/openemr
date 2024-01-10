@@ -12,7 +12,7 @@
 
 namespace OpenEMR\Events\User;
 
-use Symfony\Component\EventDispatcher\Event;
+use Symfony\Contracts\EventDispatcher\Event;
 
 class UserUpdatedEvent extends Event
 {
@@ -66,5 +66,10 @@ class UserUpdatedEvent extends Event
     public function setNewUserData($newUserData): void
     {
         $this->newUserData = $newUserData;
+    }
+
+    public function getUserId()
+    {
+        return $this->newUserData['id'] ?? null;
     }
 }

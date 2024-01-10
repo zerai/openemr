@@ -1,4 +1,5 @@
 <?php
+
 /* This is a template for printing patient statements and collection
  * letters.  You must customize it to suit your practice.  If your
  * needs are simple then you do not need programming experience to do
@@ -24,12 +25,14 @@
  * @license https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
+use OpenEMR\Common\Crypto\CryptoGen;
+
 // The location/name of a temporary file to hold printable statements.
 // May want to alter these names to allow multi-site installs out-of-the-box
 
 $STMT_TEMP_FILE = $GLOBALS['temporary_files_dir'] . "/openemr_statements.txt";
 $STMT_TEMP_FILE_PDF = $GLOBALS['temporary_files_dir'] . "/openemr_statements.pdf";
-$STMT_PRINT_CMD = $GLOBALS['print_command'];
+$STMT_PRINT_CMD = (new CryptoGen())->decryptStandard($GLOBALS['more_secure']['print_command']);
 
 /** There are two options to print a batch of PDF statements:
  *  1.  The original statement, a text based statement, using CezPDF
@@ -46,7 +49,7 @@ $STMT_PRINT_CMD = $GLOBALS['print_command'];
 function make_statement($stmt)
 {
     if ($GLOBALS['statement_appearance'] == "1") {
-        if ($_POST['form_portalnotify'] && is_auth_portal($stmt['pid'])) {
+        if (!empty($_POST['form_portalnotify']) && is_auth_portal($stmt['pid'])) {
             return osp_create_HTML_statement($stmt);
         } else {
             return create_HTML_statement($stmt);
@@ -131,7 +134,7 @@ function create_HTML_statement($stmt)
     }
 
 #minimum_amount_due_to _print
-    if ($stmt['amount'] <= ($GLOBALS['minimum_amount_to_print']) && $GLOBALS['use_statement_print_exclusion']) {
+    if ($stmt['amount'] <= ($GLOBALS['minimum_amount_to_print']) && $GLOBALS['use_statement_print_exclusion'] && ($_POST['form_category'] !== "All")) {
         return "";
     }
 
@@ -151,7 +154,7 @@ function create_HTML_statement($stmt)
     $remit_csz = "{$row['city']}, {$row['state']}, {$row['postal_code']}";
 
     ob_start();
-    ?><div style="padding-left:25px;">
+    ?><div style="padding-left:25px; page-break-after:always;">
     <?php
     $find_provider = sqlQuery("SELECT * FROM form_encounter " .
         "WHERE pid = ? AND encounter = ? " .
@@ -250,33 +253,36 @@ function create_HTML_statement($stmt)
 
         $dos = $line['dos'];
         ksort($line['detail']);
-        # Compute the aging bucket index and accumulate into that bucket.
-        $age_in_days = (int) (($todays_time - strtotime($dos)) / (60 * 60 * 24));
-        $age_index = (int) (($age_in_days - 1) / 30);
-        $age_index = max(0, min($num_ages - 1, $age_index));
-        $aging[$age_index] += $line['amount'] - $line['paid'];
         // suppressing individual adjustments = improved statement printing
         $adj_flag = false;
         $note_flag = false;
         $pt_paid_flag = false;
         $prev_ddate = '';
+        $last_activity_date = $dos;
         foreach ($line['detail'] as $dkey => $ddata) {
             $ddate = substr($dkey, 0, 10);
             if (preg_match('/^(\d\d\d\d)(\d\d)(\d\d)\s*$/', $ddate, $matches)) {
                 $ddate = $matches[1] . '-' . $matches[2] . '-' . $matches[3];
             }
 
+            if ($ddate && $ddate > $last_activity_date) {
+                $last_activity_date = $ddate;
+            }
+
             $amount = '';
 
-            if ($ddata['pmt']) {
+            if (!empty($ddata['pmt'])) {
                 $amount = sprintf("%.2f", 0 - $ddata['pmt']);
                 $desc = xl('Paid') . ' ' . substr(oeFormatShortDate($ddate), 0, 6) .
                     substr(oeFormatShortDate($ddate), 8, 2) .
                     ': ' . $ddata['src'] . ' ' . $ddata['pmt_method'] . ' ' . $ddata['insurance_company'];
-                if ($ddata['src'] == 'Pt Paid') {
+                // $ddata['plv'] is the 'payer_type' field in `ar_activity`, passed in via InvoiceSummary
+                if ($ddata['src'] == 'Pt Paid' || $ddata['plv'] == '0') {
                     $pt_paid_flag = true;
+                    $desc = xl('Pt paid') . ' ' . substr(oeFormatShortDate($ddate), 0, 6) .
+                    substr(oeFormatShortDate($ddate), 8, 2);
                 }
-            } elseif ($ddata['rsn']) {
+            } elseif (!empty($ddata['rsn'])) {
                 if ($ddata['chg']) {
                     // this is where the adjustments used to be printed individually
                     $adj_flag = true;
@@ -324,6 +330,18 @@ function create_HTML_statement($stmt)
             $out .= sprintf("%-10s  %-45s%8s\n", oeFormatShortDate($dos), "Item balance ", sprintf("%.2f", ($line['amount'] - $line['paid'])));
             ++$count;
         }
+
+        # Compute the aging bucket index and accumulate into that bucket.
+        $last_activity_date = ($line['bill_date'] > $last_activity_date) ? $line['bill_date'] : $last_activity_date;
+        // If first bill then make the amount due current and reset aging date
+        if ($stmt['dun_count'] == '0') {
+            $last_activity_date = date('Y-m-d');
+            sqlStatement("UPDATE billing SET bill_date = ? WHERE pid = ? AND encounter = ?", array(date('Y-m-d'), $row['pid'], $row['encounter']));
+        }
+        $age_in_days = (int) (($todays_time - strtotime($last_activity_date)) / (60 * 60 * 24));
+        $age_index = (int) (($age_in_days - 1) / 30);
+        $age_index = max(0, min($num_ages - 1, $age_index));
+        $aging[$age_index] += $line['amount'] - $line['paid'];
     }
 
     // This generates blank lines until we are at line 20.
@@ -457,7 +475,7 @@ function create_HTML_statement($stmt)
 
     $out .= '</div><br />
    <pre>';
-    if ($stmt['to'][3] != '') { //to avoid double blank lines the if condition is put.
+    if (!empty($stmt['to'][3])) { //to avoid double blank lines the if condition is put.
         $out .= sprintf("   %-32s\n", $stmt['to'][3]);
     }
 
@@ -468,7 +486,7 @@ function create_HTML_statement($stmt)
         . $label_addressee . '</b><br />'
         . $stmt['to'][0] . '<br />'
         . $stmt['to'][1] . '<br />'
-        . $stmt['to'][2] . '
+        . ($stmt['to'][2] ?? '') . '
       </td><td style="width:0.5in;"></td>
       <td style="margin:auto;"><b>' . $label_remitto . '</b><br />'
         . $remit_name . '<br />'

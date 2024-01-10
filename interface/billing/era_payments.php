@@ -17,15 +17,22 @@
 
 
 require_once("../globals.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once($GLOBALS['OE_SITE_DIR'] . "/statement.inc.php");
 require_once("$srcdir/options.inc.php");
 
 use OpenEMR\Billing\ParseERA;
 use OpenEMR\Billing\SLEOB;
+use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 use OpenEMR\OeUI\OemrUI;
+
+if (!AclMain::aclCheckCore('acct', 'bill', '', 'write') && !AclMain::aclCheckCore('acct', 'eob', '', 'write')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("ERA Posting")]);
+    exit;
+}
 
 $hidden_type_code = isset($_POST['hidden_type_code']) ? $_POST['hidden_type_code'] : '';
 $check_date = isset($_POST['check_date']) ? $_POST['check_date'] : '';
@@ -56,7 +63,7 @@ function era_callback(&$out)
 }
 //===============================================================================
   // Handle X12 835 file upload.
-if ($_FILES['form_erafile']['size']) {
+if (!empty($_FILES['form_erafile']['size'])) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
         CsrfUtils::csrfNotVerified();
     }
@@ -121,10 +128,10 @@ if ($_FILES['form_erafile']['size']) {
        alert(after_value);
       }
         <?php
-        if ($_FILES['form_erafile']['size']) {
+        if (!empty($_FILES['form_erafile']['size'])) {
             ?>
             var f = document.forms[0];
-            var debug = <?php echo js_escape($_REQUEST['form_without'] * 1); ?> ;
+            var debug = <?php echo js_escape(($_REQUEST['form_without'] ?? null) * 1); ?> ;
          var paydate = f.check_date.value;
          var post_to_date = f.post_to_date.value;
          var deposit_date = f.deposit_date.value;

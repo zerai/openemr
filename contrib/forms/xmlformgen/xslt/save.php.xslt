@@ -28,9 +28,9 @@ xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
 
 /* for $GLOBALS[], ?? */
 require_once('../../globals.php');
-require_once($GLOBALS['srcdir'].'/api.inc');
+require_once($GLOBALS['srcdir'].'/api.inc.php');
 /* for ??? */
-require_once($GLOBALS['srcdir'].'/forms.inc');
+require_once($GLOBALS['srcdir'].'/forms.inc.php');
 
 use OpenEMR\Common\Acl\AclMain;
 
@@ -86,11 +86,11 @@ foreach($field_names as $key=>$val)
             {
                 if (is_array($_POST['form_'.$key]))
                     {
-                        if ($_POST['form_'.$key][$lrow[option_id]])
+                        if ($_POST['form_'.$key][$lrow['option_id']])
                         {
                             if ($field_names[$key] != '')
                               $field_names[$key]=$field_names[$key].'|';
-	                    $field_names[$key] = $field_names[$key].$lrow[option_id];
+	                    $field_names[$key] = $field_names[$key].$lrow['option_id'];
                         }
                     }
             }
@@ -106,11 +106,11 @@ foreach($field_names as $key=>$val)
             {
                 if (is_array($_POST['check_'.$key]))
                 {
-                    if ($_POST['check_'.$key][$lrow[option_id]])
+                    if ($_POST['check_'.$key][$lrow['option_id']])
                     {
                         if ($field_names[$key] != '')
                           $field_names[$key]=$field_names[$key].'|';
-                        $field_names[$key] = $field_names[$key].$lrow[option_id].":xx".$_POST['form_'.$key][$lrow[option_id]];
+                        $field_names[$key] = $field_names[$key].$lrow['option_id'].":xx".$_POST['form_'.$key][$lrow['option_id']];
                     }
                 }
             }
@@ -124,9 +124,9 @@ foreach($field_names as $key=>$val)
             $lres=sqlStatement("select * from list_options where list_id = '".$lists[$key]."' ORDER BY seq, title");
             while ($lrow = sqlFetchArray($lres))
             {
-                if ($_POST['form_'.$key] == $lrow[option_id])
+                if ($_POST['form_'.$key] == $lrow['option_id'])
                 {
-                    $field_names[$key]=$lrow[option_id];
+                    $field_names[$key]=$lrow['option_id'];
                     break;
                 }
             }

@@ -15,11 +15,25 @@
 require_once("../../globals.php");
 require_once("$srcdir/options.inc.php");
 
+use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
+
+// Control access
+$authWrite = AclMain::aclCheckCore('patients', 'disclosure', '', 'write');
+$authAddonly = AclMain::aclCheckCore('patients', 'disclosure', '', 'addonly');
+if (!$authWrite && !$authAddonly) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Edit/Record Disclosure")]);
+    exit;
+}
 
 //if the edit button for editing disclosure is set.
 if (isset($_GET['editlid'])) {
+    if (!$authWrite) {
+        echo xlt('Not Authorized');
+        exit;
+    }
     $editlid = $_GET['editlid'];
 }
 ?>
@@ -83,7 +97,7 @@ $(function () {
         <div class="row">
             <div class="col-12">
                 <?php
-                if ($editlid) {
+                if (!empty($editlid)) {
                     ?><!--Edit the disclosures-->
                     <h2 class="title"><?php echo xlt('Edit Disclosure'); ?></h2><?php
                 } else { ?>
@@ -107,7 +121,7 @@ $(function () {
                     <div class="form-group mt-3">
                         <label><?php echo xlt('Date'); ?>:</label>
                         <?php
-                        if ($editlid) {
+                        if (!empty($editlid)) {
                             $dres = sqlQuery("select date,recipient,description,event from extended_log where id=?", array($editlid));
                             $description = $dres["description"];
                             $app_event = $dres["event"];
@@ -125,19 +139,19 @@ $(function () {
                     <div class="form-group mt-3">
                         <label><?php echo xlt('Type of Disclosure'); ?>:</label>
                         <?php
-                        if ($editlid) {
+                        if (!empty($editlid)) {
                             //To incorporate the disclosure types  into the list_options listings
                             generate_form_field(array('data_type' => 1,'field_id' => 'disclosure_type','list_id' => 'disclosure_type','fld_length' => '10','max_length' => '63','empty_title' => 'SKIP'), $app_event);
                         } else {
                             //To incorporate the disclosure types  into the list_options listings
-                            generate_form_field(array('data_type' => 1,'field_id' => 'disclosure_type','list_id' => 'disclosure_type','fld_length' => '10','max_length' => '63','empty_title' => 'SKIP'), $title);
+                            generate_form_field(array('data_type' => 1,'field_id' => 'disclosure_type','list_id' => 'disclosure_type','fld_length' => '10','max_length' => '63','empty_title' => 'SKIP'), ($title ?? ''));
                         } ?>
                     </div>
 
                     <div class="form-group mt-3">
                         <label><?php echo xlt('Recipient of the Disclosure'); ?>:</label>
                         <?php
-                        if ($editlid) {
+                        if (!empty($editlid)) {
                             ?> <input type="entry" class="form-control" name="recipient_name" size="20" value="<?php echo attr($recipient_name); ?>" />
                             <?php
                         } else {?>
@@ -148,7 +162,7 @@ $(function () {
 
                     <div class="form-group mt-3">
                         <label><?php echo xlt('Description of the Disclosure'); ?>:</label>
-                        <?php if ($editlid) { ?>
+                        <?php if (!empty($editlid)) { ?>
                             <textarea class="form-control" name="desc_disc" wrap="auto" rows="4" cols="30"><?php echo text($description); ?></textarea>
                         <?php } else {?>
                             <textarea class="form-control" name="desc_disc" wrap="auto" rows="4" cols="30"></textarea>

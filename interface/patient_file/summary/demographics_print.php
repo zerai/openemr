@@ -26,43 +26,24 @@ if (
 }
 
 require_once("$srcdir/options.inc.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 
 use Mpdf\Mpdf;
 use OpenEMR\Common\Acl\AclMain;
+use OpenEMR\Pdf\Config_Mpdf;
 
 $patientid = empty($_REQUEST['patientid']) ? 0 : 0 + $_REQUEST['patientid'];
 if ($patientid < 0) {
-    $patientid = 0 + $pid; // -1 means current pid
+    $patientid = (int) $pid; // -1 means current pid
 }
 
 // True if to display as a form to complete, false to display as information.
 $isform = empty($_REQUEST['isform']) ? 0 : 1;
 
-// Html2pdf fails to generate checked checkboxes properly, so write plain HTML
-// if we are doing a patient-specific complete form.
-// TODO - now use mPDF, so should test if still need this fix
 $PDF_OUTPUT = ($patientid && $isform) ? false : true;
 
 if ($PDF_OUTPUT) {
-    $config_mpdf = array(
-        'tempDir' => $GLOBALS['MPDF_WRITE_DIR'],
-        'mode' => $GLOBALS['pdf_language'],
-        'format' => 'Letter',
-        'default_font_size' => '9',
-        'default_font' => 'dejavusans',
-        'margin_left' => $GLOBALS['pdf_left_margin'],
-        'margin_right' => $GLOBALS['pdf_right_margin'],
-        'margin_top' => $GLOBALS['pdf_top_margin'],
-        'margin_bottom' => $GLOBALS['pdf_bottom_margin'],
-        'margin_header' => '',
-        'margin_footer' => '',
-        'orientation' => 'P',
-        'shrink_tables_to_fit' => 1,
-        'use_kwt' => true,
-        'autoScriptToLang' => true,
-        'keep_table_proportions' => true
-    );
+    $config_mpdf = Config_Mpdf::getConfigMpdf();
     $pdf = new mPDF($config_mpdf);
     if ($_SESSION['language_direction'] == 'rtl') {
         $pdf->SetDirectionality('rtl');
@@ -208,10 +189,9 @@ td.dcols3 { width: 80%; }
 $logo = '';
 $ma_logo_path = "sites/" . $_SESSION['site_id'] . "/images/ma_logo.png";
 if (is_file("$webserver_root/$ma_logo_path")) {
-    $logo = "<img src='$web_root/$ma_logo_path' style='height:" . round(9 * 5.14) . "pt' />";
-} else {
-    $logo = "<!-- '$ma_logo_path' does not exist. -->";
+    $logo = "$web_root/$ma_logo_path";
 }
+
 echo genFacilityTitle(xl('Registration Form'), -1, $logo);
 
 function end_cell()
@@ -249,25 +229,7 @@ function end_group()
 
 function getContent()
 {
-    global $web_root, $webserver_root;
     $content = ob_get_clean();
-    // Fix a nasty html2pdf bug - it ignores document root!
-    // TODO - now use mPDF, so should test if still need this fix
-    $i = 0;
-    $wrlen = strlen($web_root);
-    $wsrlen = strlen($webserver_root);
-    while (true) {
-        $i = stripos($content, " src='/", $i + 1);
-        if ($i === false) {
-            break;
-        }
-        if (
-            substr($content, $i + 6, $wrlen) === $web_root &&
-            substr($content, $i + 6, $wsrlen) !== $webserver_root
-        ) {
-            $content = substr($content, 0, $i + 6) . $webserver_root . substr($content, $i + 6 + $wrlen);
-        }
-    }
     return $content;
 }
 

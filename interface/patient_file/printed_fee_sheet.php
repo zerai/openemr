@@ -19,8 +19,8 @@
 
 require_once("../globals.php");
 require_once("$srcdir/appointments.inc.php");
-require_once("$srcdir/patient.inc");
-require_once("$srcdir/user.inc");
+require_once("$srcdir/patient.inc.php");
+require_once("$srcdir/user.inc.php");
 
 use OpenEMR\Core\Header;
 use OpenEMR\Services\FacilityService;
@@ -313,7 +313,7 @@ height: " . attr($page_height) . "pt;
 }
 </style>";
 
-$html .= "<title>" . text($frow['name']) . "</title>" .
+$html .= "<title>" . text($frow['name'] ?? '') . "</title>" .
     Header::setupHeader(['opener', 'topdialog'], false) .
     "<script>";
 
@@ -356,9 +356,9 @@ if (empty($frow)) {
 $logo = '';
 $ma_logo_path = "sites/" . $_SESSION['site_id'] . "/images/ma_logo.png";
 if (is_file("$webserver_root/$ma_logo_path")) {
-    $logo = "<img src='$web_root/$ma_logo_path' style='height:" . round(9 * 5.14) . "pt' />";
+    $logo = "$web_root/$ma_logo_path";
 } else {
-    $logo = "<!-- '$ma_logo_path' does not exist. -->";
+    $logo = "";
 }
 
 // Loop on array of PIDS
@@ -366,7 +366,7 @@ $saved_pages = $pages; //Save calculated page count of a single fee sheet
 $loop_idx = 0; // counter for appt list
 
 foreach ($pid_list as $pid) {
-    $apptdate = $apptdate_list[$loop_idx]; // parallel array to pid_list
+    $apptdate = $apptdate_list[$loop_idx] ?? null; // parallel array to pid_list
     $appointment = fetchAppointments($apptdate, $apptdate, $pid);  // Only expecting one row for pid
     // Set Pagebreak for multi forms
     if ($form_fill == 2) {
@@ -388,10 +388,10 @@ foreach ($pid_list as $pid) {
     while (--$pages >= 0) {
         $html .= genFacilityTitle(xl('Superbill/Fee Sheet'), -1, $logo);
         $html .= '<table style="width: 100%"><tr>' .
-            '<td>' . xlt('Patient') . ': <span style="font-weight: bold;">' . text($patdata['fname']) . ' ' . text($patdata['mname']) . ' ' . text($patdata['lname']) . '</span></td>' .
-            '<td>' . xlt('DOB') . ': <span style="font-weight: bold;">' . text(oeFormatShortDate($patdata['DOB'])) . '</span></td>' .
-            '<td>' . xlt('Date of Service') . ': <span style="font-weight: bold;">' . text(oeFormatShortDate($appointment[0]['pc_eventDate'])) . ' ' . text(oeFormatTime($appointment[0]['pc_startTime'])) . '</span></td>' .
-            '<td>' . xlt('Ref Prov') . ': <span style="font-weight: bold;">' . text($referDoc['fname']) . ' ' . text($referDoc['lname']) . '</span></td>' .
+            '<td>' . xlt('Patient') . ': <span style="font-weight: bold;">' . text($patdata['fname'] ?? '') . ' ' . text($patdata['mname'] ?? '') . ' ' . text($patdata['lname'] ?? '') . '</span></td>' .
+            '<td>' . xlt('DOB') . ': <span style="font-weight: bold;">' . text(oeFormatShortDate($patdata['DOB'] ?? '')) . '</span></td>' .
+            '<td>' . xlt('Date of Service') . ': <span style="font-weight: bold;">' . text(oeFormatShortDate($appointment[0]['pc_eventDate'] ?? '')) . ' ' . text(oeFormatTime($appointment[0]['pc_startTime'] ?? '')) . '</span></td>' .
+            '<td>' . xlt('Ref Prov') . ': <span style="font-weight: bold;">' . text($referDoc['fname'] ?? '') . ' ' . text($referDoc['lname'] ?? '') . '</span></td>' .
             '</tr></table>';
         $html .= "
 <table class='bordertbl' cellspacing='0' cellpadding='0' width='100%'>
@@ -438,7 +438,7 @@ foreach ($pid_list as $pid) {
             $html .= "</td>
 </tr>
 <tr>
-<td colspan='3' valign='top' class='fshead' style='height:${lheight}pt'>";
+<td colspan='3' valign='top' class='fshead' style='height:{$lheight}pt'>";
             $html .= xlt('Provider');
             $html .= ": ";
 
@@ -467,12 +467,12 @@ foreach ($pid_list as $pid) {
 
             // Note: You would think that pc_comments would have the Appt. comments,
             // but it is actually stored in pc_hometext in DB table (openemr_postcalendar_events).
-            $html .= $appointment['pc_hometext'];
+            $html .= $appointment['pc_hometext'] ?? '';
 
             $html .= "</td>
 </tr>
 <tr>
-<td colspan='4' valign='top' class='fshead' style='height:${lheight}pt'>";
+<td colspan='4' valign='top' class='fshead' style='height:{$lheight}pt'>";
 
             if (empty($GLOBALS['ippf_specific'])) {
                 $html .= xlt('Insurance') . ":";
@@ -482,7 +482,7 @@ foreach ($pid_list as $pid) {
                                 "pid = ? AND type = ? " .
                                 "ORDER BY date DESC LIMIT 1";
                         $row = sqlQuery($query, array($pid, $instype));
-                        if ($row['provider']) {
+                        if (!empty($row['provider'])) {
                             $icobj = new InsuranceCompany($row['provider']);
                             $adobj = $icobj->get_address();
                             $insco_name = trim($icobj->get_name());
@@ -512,25 +512,25 @@ foreach ($pid_list as $pid) {
             $html .= "</td>
 </tr>
 <tr>
-<td colspan='4' valign='top' class='fshead' style='height:${lheight}pt'>";
+<td colspan='4' valign='top' class='fshead' style='height:{$lheight}pt'>";
             $html .= xlt('Prior Visit');
             $html .= ":<br />
 </td>
 </tr>
 <tr>
-<td colspan='4' valign='top' class='fshead' style='height:${lheight}pt'>";
+<td colspan='4' valign='top' class='fshead' style='height:{$lheight}pt'>";
             $html .= xlt('Today\'s Charges');
             $html .= ":<br />
 </td>
 </tr>
 <tr>
-<td colspan='4' valign='top' class='fshead' style='height:${lheight}pt'>";
+<td colspan='4' valign='top' class='fshead' style='height:{$lheight}pt'>";
             $html .= xlt('Today\'s Balance');
             $html .= ":<br />
 </td>
 </tr>
 <tr>
-<td colspan='4' valign='top' class='fshead' style='height:${lheight}pt'>";
+<td colspan='4' valign='top' class='fshead' style='height:{$lheight}pt'>";
             $html .= xlt('Notes');
             $html .= ":<br />
 </td>

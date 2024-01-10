@@ -12,13 +12,20 @@
  */
 
 require_once("../globals.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once("$srcdir/options.inc.php");
 require_once("../drugs/drugs.inc.php");
 require_once("../../custom/code_types.inc.php");
 
+use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
+
+if (!AclMain::aclCheckCore('patients', 'med')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Clinical Reports")]);
+    exit;
+}
 
 if (!empty($_POST)) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
@@ -254,7 +261,7 @@ Search options include diagnosis, procedure, prescription, medical history, and 
                         </tr>
                         </table></td>
                         <td class='col-form-label'><?php echo xlt('Problem DX'); ?>:</td>
-                        <td><input type='text' name='form_diagnosis form-control' class= 'form-control' size='10' maxlength='250' value='<?php echo attr($form_diagnosis); ?>' onclick='sel_diagnosis(this)' title='<?php echo xla('Click to select or change diagnoses'); ?>' readonly /></td>
+                        <td><input type='text' name='form_diagnosis' class= 'form-control' size='10' maxlength='250' value='<?php echo attr($form_diagnosis); ?>' onclick='sel_diagnosis(this)' title='<?php echo xla('Click to select or change diagnoses'); ?>' readonly /></td>
                                                 <td>&nbsp;</td>
 <!-- Visolve -->
                     </tr>
@@ -442,7 +449,7 @@ if (!empty($_POST['form_refresh'])) {
                 pd.race AS patient_race,pd.ethnicity AS patient_ethinic,
                 concat(u.fname, ' ', u.lname)  AS users_provider,
                 REPLACE(REPLACE(concat_ws(',',IF(pd.hipaa_allowemail = 'YES', 'Allow Email','NO'),IF(pd.hipaa_allowsms = 'YES', 'Allow SMS','NO') , IF(pd.hipaa_mail = 'YES', 'Allow Mail Message','NO') , IF(pd.hipaa_voice = 'YES', 'Allow Voice Message','NO') ), ',NO',''), 'NO,','') as communications";
-    if (strlen($form_diagnosis) > 0 || !empty($_POST['form_diagnosis_allergy']) || !empty($_POST['form_diagnosis_medprb'])) {
+    if (!empty($form_diagnosis)) {
         $sqlstmt = $sqlstmt . ",li.date AS lists_date,
                    li.diagnosis AS lists_diagnosis,
                         li.title AS lists_title";
@@ -499,12 +506,8 @@ if (!empty($_POST['form_refresh'])) {
     $sqlstmt = $sqlstmt . " from patient_data as pd left outer join users as u on u.id = pd.providerid
             left outer join facility as f on f.id = u.facility_id";
 
-    if (strlen($form_diagnosis) > 0 || (!empty($_POST['form_diagnosis_allergy']) && !empty($_POST['form_diagnosis_medprb']))) {
+    if (!empty($form_diagnosis)) {
         $sqlstmt = $sqlstmt . " left outer join lists as li on (li.pid  = pd.pid AND (li.type='medical_problem' OR li.type='allergy')) ";
-    } elseif (!empty($_POST['form_diagnosis_allergy'])) {
-        $sqlstmt = $sqlstmt . " left outer join lists as li on (li.pid  = pd.pid AND (li.type='allergy')) ";
-    } elseif (!empty($_POST['form_diagnosis_medprb'])) {
-        $sqlstmt = $sqlstmt . " left outer join lists as li on (li.pid  = pd.pid AND (li.type='medical_problem')) ";
     }
 
     if ($type == 'Procedure' || ( strlen($form_lab_results) != 0) || !empty($_POST['lab_results'])) {
@@ -544,14 +547,14 @@ if (!empty($_POST['form_refresh'])) {
 
 //where
       $whr_stmt = "where 1=1";
-    if (strlen($form_diagnosis) > 0 || !empty($_POST['form_diagnosis_allergy']) || !empty($_POST['form_diagnosis_medprb'])) {
+    if (!empty($form_diagnosis)) {
         $whr_stmt = $whr_stmt . " AND li.date >= ? AND li.date < DATE_ADD(?, INTERVAL 1 DAY) AND DATE(li.date) <= ?";
         array_push($sqlBindArray, $sql_date_from, $sql_date_to, date("Y-m-d"));
     }
 
     if (strlen($form_lab_results) != 0 || !empty($_POST['lab_results'])) {
-              $whr_stmt = $whr_stmt . " AND pr.date >= ? AND pr.date < DATE_ADD(?, INTERVAL 1 DAY) AND DATE(pr.date) <= ?";
-              array_push($sqlBindArray, $sql_date_from, $sql_date_to, date("Y-m-d"));
+        $whr_stmt = $whr_stmt . " AND pr.date >= ? AND pr.date < DATE_ADD(?, INTERVAL 1 DAY) AND DATE(pr.date) <= ?";
+        array_push($sqlBindArray, $sql_date_from, $sql_date_to, date("Y-m-d"));
     }
 
     if (strlen($form_drug_name) != 0 || !empty($_POST['form_drug'])) {
@@ -638,9 +641,9 @@ if (!empty($_POST['form_refresh'])) {
         array_push($sqlBindArray, $facility);
     }
 
-    if (strlen($form_diagnosis) > 0) {
-        $whr_stmt = $whr_stmt . " AND (li.diagnosis LIKE ? or li.diagnosis LIKE ? or li.diagnosis LIKE ? or li.diagnosis = ?) ";
-        array_push($sqlBindArray, $form_diagnosis . "%", '%' . $form_diagnosis . '%', '%' . $form_diagnosis, $form_diagnosis);
+    if (!empty($form_diagnosis)) {
+        $whr_stmt = $whr_stmt . " AND (li.diagnosis LIKE ?) ";
+        array_push($sqlBindArray, '%' . $form_diagnosis . '%');
     }
 
   //communication preferences added in clinical report
@@ -676,7 +679,7 @@ if (!empty($_POST['form_refresh'])) {
         $odrstmt = $odrstmt . ",patient_age";
     }
 
-    if ((strlen($form_diagnosis) > 0)) {
+    if (!empty($form_diagnosis)) {
         $odrstmt = $odrstmt . ",lists_diagnosis";
     } elseif ((!empty($_POST['form_diagnosis_allergy'])) || (!empty($_POST['form_diagnosis_medprb']))) {
         $odrstmt = $odrstmt . ",lists_title";
@@ -771,7 +774,7 @@ if (!empty($_POST['form_refresh'])) {
                 </tr>
 <!-- Diagnosis Report Start-->
                 <?php
-                if (strlen($form_diagnosis) > 0 || !empty($_POST['form_diagnosis_allergy']) || !empty($_POST['form_diagnosis_medprb'])) {
+                if (!empty($form_diagnosis)) {
                     ?>
                 <tr bgcolor="#C3FDB8" align="left">
                     <td colspan='12'><strong><?php echo "#";
@@ -910,8 +913,7 @@ if (!empty($_POST['form_refresh'])) {
                 if ($type == 'Medical History') {
                     ?>
                             <tr bgcolor="#C3FDB8" align= "left">
-                <td colspan=12><strong><?php echo "#";
-                echo xlt('Medical History');?><strong></td></tr>
+                <td colspan=12><strong><?php echo "#" . xlt('Medical History');?></strong></td></tr>
                             <tr bgcolor="#C3FDB8" align= "left">
                 <td><strong><?php echo xlt('History Date'); ?></strong></td>
                 <td><strong><?php echo xlt('Tobacco');?></strong></td>
@@ -923,7 +925,7 @@ if (!empty($_POST['form_refresh'])) {
                     $tmp_t = explode('|', $row['history_data_tobacco']);
                     $tmp_a = explode('|', $row['history_data_alcohol']);
                     $tmp_d = explode('|', $row['history_data_recreational_drugs']);
-                                        $his_tobac =  generate_display_field(array('data_type' => '1','list_id' => 'smoking_status'), $tmp_t[3]) ;
+                    $his_tobac =  generate_display_field(array('data_type' => '1','list_id' => 'smoking_status'), $tmp_t[3]);
                     ?>
                 <td> <?php echo text(oeFormatShortDate($row['history_data_date'])); ?>&nbsp;</td>
                                 <td> <?php
@@ -934,6 +936,7 @@ if (!empty($_POST['form_refresh'])) {
 
                                 echo $his_tobac; ?>&nbsp;</td>
                     <?php
+                    $res = xl('No history recorded');
                     if ($tmp_a[1] == "currentalcohol") {
                         $res = xl('Current Alcohol');
                     }
@@ -952,6 +955,8 @@ if (!empty($_POST['form_refresh'])) {
                     ?>
                                  <td> <?php echo text($res); ?>&nbsp;</td>
                     <?php
+
+                    $resd = xl('No history recorded');
                     if ($tmp_d[1] == "currentrecreational_drugs") {
                         $resd = xl('Current Recreational Drugs');
                     }

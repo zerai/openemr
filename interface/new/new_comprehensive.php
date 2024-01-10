@@ -8,7 +8,7 @@
  * @author    Rod Roark <rod@sunsetsystems.com>
  * @author    Brady Miller <brady.g.miller@gmail.com>
  * @author    Tyler Wrenn <tyler@tylerwrenn.com>
- * @copyright Copyright (c) 2009-2017 Rod Roark <rod@sunsetsystems.com>
+ * @copyright Copyright (c) 2009-2021 Rod Roark <rod@sunsetsystems.com>
  * @copyright Copyright (c) 2017-2019 Brady Miller <brady.g.miller@gmail.com>
  * @copyright Copyright (c) 2020 Tyler Wrenn <tyler@tylerwrenn.com>
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
@@ -16,26 +16,33 @@
 
 require_once("../globals.php");
 require_once("$srcdir/options.inc.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once("$srcdir/validation/LBF_Validation.php");
 require_once("$srcdir/patientvalidation.inc.php");
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 
 // Check authorization.
 if (!AclMain::aclCheckCore('patients', 'demo', '', array('write','addonly'))) {
-    die(xlt("Adding demographics is not authorized."));
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Search or Add Patient")]);
+    exit;
 }
 
 $CPR = 4; // cells per row
+
+$searchcolor = empty($GLOBALS['layout_search_color']) ?
+  'var(--yellow)' : $GLOBALS['layout_search_color'];
 
 $WITH_SEARCH = ($GLOBALS['full_new_patient_form'] == '1' || $GLOBALS['full_new_patient_form'] == '2' );
 $SHORT_FORM  = ($GLOBALS['full_new_patient_form'] == '2' || $GLOBALS['full_new_patient_form'] == '3' || $GLOBALS['full_new_patient_form'] == '4');
 
 $grparr = array();
-getLayoutProperties('DEM', $grparr);
+getLayoutProperties('DEM', $grparr, '*');
+
+$TOPCPR = empty($grparr['']['grp_columns']) ? 4 : $grparr['']['grp_columns'];
 
 function getLayoutRes()
 {
@@ -74,19 +81,15 @@ function getSearchClass($data_type)
 
 $fres = getLayoutRes();
 ?>
+<!DOCTYPE html>
 <html>
 <head>
-<?php Header::setupHeader(['common','datetime-picker','select2']); ?>
+<?php Header::setupHeader(['common','datetime-picker','select2', 'erx']); ?>
 <title><?php echo xlt("Search or Add Patient"); ?></title>
-<?php require_once("$srcdir/erx_javascript.inc.php"); ?>
 <style>
-  div.section {
-   border: solid;
-   border-width: 1px;
-   border-color: var(--primary);
-   margin: 0 0 0 13px;
-   padding: 7px;
-  }
+.form-group {
+    margin-bottom: 0.25rem;
+}
 </style>
 
 <?php include_once("{$GLOBALS['srcdir']}/options.js.php"); ?>
@@ -130,6 +133,7 @@ function auto_populate_employer_address<?php echo $i ?>(){
   f.i<?php echo $i?>subscriber_mname.value=f.form_mname.value;
   f.i<?php echo $i?>subscriber_lname.value=f.form_lname.value;
   f.i<?php echo $i?>subscriber_street.value=f.form_street.value;
+  f.i<?php echo $i?>subscriber_street_line_2.value=f.form_street_line_2.value;
   f.i<?php echo $i?>subscriber_city.value=f.form_city.value;
   f.form_i<?php echo $i?>subscriber_state.value=f.form_state.value;
   f.i<?php echo $i?>subscriber_postal_code.value=f.form_postal_code.value;
@@ -203,28 +207,6 @@ function capitalizeMe(elem) {
   }
  }
  elem.value = s;
-}
-
-// Onkeyup handler for policy number.  Allows only A-Z and 0-9.
-function policykeyup(e) {
- var v = e.value.toUpperCase();
- var filteredString="";
- for (var i = 0; i < v.length; ++i) {
-  var c = v.charAt(i);
-  if ((c >= '0' && c <= '9') ||
-     (c >= 'A' && c <= 'Z') ||
-     (c == '*') ||
-     (c == '-') ||
-     (c == '_') ||
-     (c == '(') ||
-     (c == ')') ||
-     (c == '#'))
-     {
-         filteredString+=c;
-     }
- }
- e.value = filteredString;
- return;
 }
 
 function divclick(cb, divid) {
@@ -311,6 +293,11 @@ function toggleSearch(elem) {
  var f = document.forms[0];
 <?php if ($WITH_SEARCH) { ?>
  // Toggle background color.
+ if (elem.style.backgroundColor == '')
+  elem.style.backgroundColor = <?php echo js_escape($searchcolor); ?>;
+ else
+  elem.style.backgroundColor = '';
+
  if (!elem.classList.contains("is-invalid") && $.trim($(elem).val()) == '') {
   elem.classList.add("is-invalid");
 } else {
@@ -399,47 +386,53 @@ function srchDone(pid){
 $constraints = LBF_Validation::generate_validate_constraints("DEM");
 ?>
 <script> var constraints = <?php echo $constraints; ?>; </script>
-    <div class="container">
+    <div class="container-xl">
         <div class="row">
             <div class="col-md-12">
                 <h2><?php echo xlt('Search or Add Patient');?></h2>
             </div>
         </div>
-        <br />
         <div class="row">
-            <div class="col-sm-12">
-                <form action='new_comprehensive_save.php' name='demographics_form' id="DEM"  method='post' onsubmit='return submitme(<?php echo $GLOBALS['new_validate'] ? 1 : 0;?>,event,"DEM",constraints)'>
+            <div class="<?php echo $BS_COL_CLASS; ?>-12">
+                <div class="accordion" id="dem_according">
+                <form action='new_comprehensive_save.php' name='demographics_form' id='DEM'
+                      method='post'
+                      onsubmit='return submitme(<?php echo $GLOBALS['new_validate'] ? 1 : 0;?>,event,"DEM",constraints)'>
+                    <!--  Was: class='form-inline' -->
                     <input type="hidden" name="csrf_token_form" value="<?php echo attr(CsrfUtils::collectCsrfToken()); ?>" />
-                    <table class='table w-100' cellspacing='8'>
+
+                    <table class='table table-sm w-100' cellspacing='8'>
                     <tr>
                       <td class="text-left align-top">
                     <?php
                     if ($SHORT_FORM) {
-                        echo "  <div class='mx-auto'>\n";
+                        echo "<div class='mx-auto'>";
                     } ?>
                     <?php
 
                     function end_cell()
                     {
-                        global $item_count, $cell_count;
+                        global $item_count;
                         if ($item_count > 0) {
-                            echo "</td>";
+                            echo "</div>"; // end BS column
                             $item_count = 0;
                         }
                     }
 
                     function end_row()
                     {
-                        global $cell_count, $CPR;
+                        global $cell_count, $CPR, $BS_COL_CLASS;
                         end_cell();
-                        if ($cell_count > 0) {
-                            for (; $cell_count < $CPR; ++$cell_count) {
-                                echo "<td></td>";
-                            }
-
-                            echo "</tr>\n";
-                            $cell_count = 0;
+                        if ($cell_count > 0 && $cell_count < $CPR) {
+                            // Create a cell occupying the remaining bootstrap columns.
+                            // BS columns will be less than 12 if $CPR is not 2, 3, 4, 6 or 12.
+                            $bs_cols_remaining = ($CPR - $cell_count) * intval(12 / $CPR);
+                            echo "<div class='$BS_COL_CLASS-$bs_cols_remaining'></div>";
                         }
+                        if ($cell_count > 0) {
+                            echo "</div><!-- End BS row -->\n";
+                        }
+                        $cell_count = 0;
                     }
 
                     function end_group()
@@ -447,11 +440,12 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                         global $last_group, $SHORT_FORM;
                         if (strlen($last_group) > 0) {
                             end_row();
-                            echo " </table>\n";
+                            echo "</div>\n"; // end BS container
                             if (!$SHORT_FORM) {
                                 echo "</div>\n";
                             }
                         }
+                        echo "</div>";
                     }
 
                     $last_group    = '';
@@ -459,7 +453,6 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                     $item_count    = 0;
                     $display_style = 'block';
                     $group_seq     = 0; // this gives the DIV blocks unique IDs
-
                     $condition_str = '';
 
                     while ($frow = sqlFetchArray($fres)) {
@@ -472,7 +465,7 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                         $currvalue  = '';
 
                         // Accumulate action conditions into a JSON expression for the browser side.
-                        accumActionConditions($field_id, $condition_str, $frow['conditions']);
+                        accumActionConditions($frow, $condition_str);
 
                         if (strpos($field_id, 'em_') === 0) {
                             $tmp = substr($field_id, 3);
@@ -485,40 +478,43 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                             }
                         }
 
-                  // Handle a data category (group) change.
+                        // Handle a data category (group) change.
                         if (strcmp($this_group, $last_group) != 0) {
                             if (!$SHORT_FORM) {
                                 end_group();
                                 $group_seq++;    // ID for DIV tags
                                 $group_name = $grparr[$this_group]['grp_title'];
 
-                                if (strlen($last_group) > 0) {
-                                    echo "<br />";
+                                $group_seq_attr = attr($group_seq);
+                                $checked = ($display_style == 'block') ? "show" : "";
+                                $group_name_xl = text(xl_layout_label($group_name));
+                                $onclick = attr_js("div_" . $group_seq);
+                                $init_open = $grparr[$this_group]['grp_init_open'];
+                                if ($checked != "show") {
+                                    $checked = ($init_open == 1) ? $checked . " show" : $checked;
                                 }
-
-                                echo "<span class='font-weight-bold'><input type='checkbox' name='form_cb_" . attr($group_seq) . "' id='form_cb_" . attr($group_seq) . "' value='1' " .
-                                "onclick='return divclick(this," . attr_js("div_" . $group_seq) . ");'";
-                                if ($display_style == 'block') {
-                                    echo " checked";
-                                }
-
-                                // Modified 6-09 by BM - Translate if applicable
-                                echo " /><strong>" . text(xl_layout_label($group_name)) . "</strong></span>\n";
-
-                                echo "<div id='div_" . attr($group_seq) . "' class='section' style='display: $display_style;'>\n";
-                                echo " <table class='table table-borderless form-inline'>\n";
+                                echo <<<HTML
+                                <div class="card">
+                                    <div class="card-header p-0 bg-secondary" id="header_{$group_seq_attr}">
+                                        <h2 class="mb-0">
+                                            <button class="btn btn-link btn-block text-light text-left" type="button" data-toggle="collapse" data-target="#div_{$group_seq_attr}" aria-expanded="true" aria-controls="{$group_seq_attr}">$group_name_xl</button>
+                                        </h2>
+                                    </div>
+                                    <div id="div_{$group_seq_attr}" class="bg-light collapse {$checked}" aria-labelledby="header_{$group_seq_attr}" >
+                                        <div class="container-xl card-body">
+                                HTML;
                                 $display_style = 'none';
                             } elseif (strlen($last_group) == 0) {
-                                echo " <table class='table table-borderless form-inline'>\n";
+                                echo " <div class='container-xl'>\n";
                             }
-
-                                $last_group = $this_group;
+                            $CPR = empty($grparr[$this_group]['grp_columns']) ? $TOPCPR : $grparr[$this_group]['grp_columns'];
+                            $last_group = $this_group;
                         }
 
                       // Handle starting of a new row.
                         if (($titlecols > 0 && $cell_count >= $CPR) || $cell_count == 0) {
                             end_row();
-                            echo "  <tr>";
+                            echo "<div class='form-group row'>";
                         }
 
                         if ($item_count == 0 && $titlecols == 0) {
@@ -526,47 +522,67 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                         }
 
                         $field_id_label = 'label_' . $frow['field_id'];
-                      // Handle starting of a new label cell.
+
+                        // Handle starting of a new label cell.
                         if ($titlecols > 0) {
                             end_cell();
-                            echo "<td colspan='" . attr($titlecols) . "' id='" . attr($field_id_label) . "'";
-                            echo ($frow['uor'] == 2) ? " class='required'" : " class='font-weight-bold'";
-                            if ($cell_count == 2) {
-                                echo " style='padding-left: 13px'";
-                            }
-
+                            $bs_cols = $titlecols * intval(12 / $CPR);
+                            echo "<div class='$BS_COL_CLASS-$bs_cols ";
+                            echo ($frow['uor'] == 2) ? "required" : "";
+                            echo "' id='" . attr($field_id_label) . "'";
                             echo ">";
                             $cell_count += $titlecols;
                         }
 
+                        // $item_count is the number of title and data items in the current cell.
                         ++$item_count;
 
-                        echo "<strong>";
-
-                      // Modified 6-09 by BM - Translate if applicable
-                        if ($frow['title']) {
-                            echo (text(xl_layout_label($frow['title'])) . ":");
-                        } else {
-                            echo "&nbsp;";
+                        if ($datacols == 0) {
+                            // Data will be in the same cell, so prevent wrapping between title and data.
+                            echo "<span class='text-nowrap mr-2'>"; // mb-2 doesn't work here
                         }
 
-                        echo "</strong>";
 
-                      // Handle starting of a new data cell.
+                        // Modified 6-09 by BM - Translate if applicable
+                        if ($frow['title']) {
+                            echo (text(xl_layout_label($frow['title'])) . ":");
+                        }
+
+                        // Handle starting of a new data cell.
                         if ($datacols > 0) {
                             $id_field_text = "text_" . $frow['field_id'];
                             end_cell();
-                            echo "<td colspan='" . attr($datacols) . "' class='text data'";
-                            if ($cell_count > 0) {
-                                echo " style='padding-left: 7px'" . " id='" . attr($id_field_text) . "'";
-                            }
-
+                            $bs_cols = $datacols * intval(12 / $CPR);
+                            echo "<div class='$BS_COL_CLASS-$bs_cols'";
+                            echo " id='" . attr($id_field_text) . "'";
                             echo ">";
                             $cell_count += $datacols;
                         }
 
                         ++$item_count;
+
+                        if ($item_count > 1) {
+                            echo "&nbsp;";
+                        }
+
+                        // 'smallform' can be used to add arbitrary CSS classes. Note the leading space.
+                        $frow['smallform'] = ' form-control-sm mw-100' . ($datacols ? '' : ' mb-1');
+
+                        // set flag so we don't bring in session pid data for a new pt form
+                        $frow['blank_form'] = false;
+                        if (
+                            $frow['data_type'] == "52"
+                            || $frow['data_type'] == "53"
+                            || $frow['data_type'] == "54"
+                        ) {
+                            $frow['blank_form'] = true;
+                        }
                         generate_form_field($frow, $currvalue);
+
+                        if ($datacols == 0) {
+                            // End nowrap
+                            echo "</span> "; // space to allow wrap between spans
+                        }
                     }
 
                     end_group();
@@ -587,14 +603,17 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                             $insurance_info[2] = getInsuranceData($pid, "secondary");
                             $insurance_info[3] = getInsuranceData($pid, "tertiary");
                         }
-                        echo "<br /><span class='font-weight-bold'><input type='checkbox' name='form_cb_ins' value='1' " .
-                        "onclick='return divclick(this,\"div_ins\");'";
-                        if ($display_style == 'block') {
-                            echo " checked";
-                        }
-
-                        echo " /><strong>" . xlt('Insurance') . "</strong></span>\n";
-                        echo "<div id='div_ins' class='section' style='display: $display_style;'>\n";
+                        $insuranceTitle = xlt("Insurance");
+                        echo <<<HTML
+                        <div class="card">
+                            <div class="card-header p-0 bg-secondary" id="header_ins">
+                                <h2 class="mb-0">
+                                    <button class="btn btn-link btn-block text-light text-left" type="button" data-toggle="collapse" data-target="#div_ins" aria-expanded="true" aria-controls="ins">$insuranceTitle</button>
+                                </h2>
+                            </div>
+                            <div id="div_ins" class="bg-light collapse" aria-labelledby="header_ins" >
+                                <div class="container-xl card-body">
+                        HTML;
 
                         for ($i = 1; $i <= sizeof($insurance_info); $i++) {
                             $result3 = $insurance_info[$i];
@@ -608,7 +627,7 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                                   <?php
                                     foreach ($insurancei as $iid => $iname) {
                                         echo "<option value='" . attr($iid) . "'";
-                                        if (strtolower($iid) == strtolower($result3["provider"])) {
+                                        if (!empty($result3["provider"]) && (strtolower($iid) == strtolower($result3["provider"]))) {
                                             echo " selected";
                                         }
                                         echo ">" . text($iname) . "</option>\n";
@@ -616,7 +635,7 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                                     ?>
                               </select>
                               <div class="input-group-append">
-                                <a class='btn btn-primary text-white medium_modal' href='../practice/ins_search.php' onclick='ins_search(<?php echo attr($i); ?>)'><?php echo xlt('Search/Add Insurer'); ?></a>
+                                <a class='btn btn-primary text-white medium_modal' href='../practice/ins_search.php' onclick='ins_search(<?php echo attr_js($i); ?>)'><?php echo xlt('Search/Add Insurer'); ?></a>
                               </div>
                             </div>
                           </div>
@@ -637,7 +656,7 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                           <label class='col-form-label col-md-1 mb-2 required'><?php echo xlt('Relationship'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <?php
-                            generate_form_field(array('data_type' => 1,'field_id' => ('i' . $i . 'subscriber_relationship'),'list_id' => 'sub_relation','empty_title' => ' '), ($result3['subscriber_relationship'] ?? ''));
+                            generate_form_field(array('data_type' => 1,'field_id' => ('i' . $i . 'subscriber_relationship'),'list_id' => 'sub_relation','empty_title' => ' ', 'smallform' => 'true'), ($result3['subscriber_relationship'] ?? ''));
                             ?>
                             <a href="javascript:popUp('../../interface/patient_file/summary/browse.php?browsenum=<?php echo attr_url($i); ?>')" class='text'>(<?php echo xlt('Browse'); ?>)</a>
                           </div>
@@ -645,7 +664,7 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                           <div class="col-md-5 mb-2">
                             <input type='entry' class='form-control' size='16' name='i<?php echo attr($i); ?>policy_number' value="<?php echo attr($result3["policy_number"] ?? ''); ?>" onkeyup='policykeyup(this)' />
                           </div>
-                          <label class='col-form-label col-md-1 mb-2 font-weight-bold'><?php echo xlt('D.O.B.'); ?>:</label>
+                          <label class='col-form-label col-md-1 mb-2'><?php echo xlt('D.O.B.'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <input type='entry' size='11' class='datepicker form-control' name='i<?php echo attr($i); ?>subscriber_DOB' id='i<?php echo attr($i); ?>subscriber_DOB' value='<?php echo attr($result3['subscriber_DOB'] ?? ''); ?>' />
                           </div>
@@ -653,7 +672,7 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                           <div class="col-md-5 mb-2">
                             <input type='entry' class='form-control' size='16' name='i<?php echo attr($i); ?>group_number' value="<?php echo attr($result3["group_number"] ?? ''); ?>" onkeyup='policykeyup(this)' />
                           </div>
-                          <label class='col-form-label col-md-1 mb-2 font-weight-bold'><?php echo xlt('S.S.'); ?>:</label>
+                          <label class='col-form-label col-md-1 mb-2'><?php echo xlt('S.S.'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <input type='entry' class='form-control' size='11' name='i<?php echo attr($i); ?>subscriber_ss' value="<?php echo attr($result3["subscriber_ss"] ?? ''); ?>" />
                           </div>
@@ -666,10 +685,10 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                               </small>
                             </div>
                             <?php echo ($GLOBALS['omit_employers']) ? "</div>" : ""; ?>
-                          <label class='col-form-label col-md-1 mb-2 font-weight-bold'><?php echo xlt('Sex'); ?>:</label>
+                          <label class='col-form-label col-md-1 mb-2'><?php echo xlt('Sex'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <?php
-                            generate_form_field(array('data_type' => 1,'field_id' => ('i' . $i . 'subscriber_sex'),'list_id' => 'sex'), $result3['subscriber_sex'] ?? '');
+                            generate_form_field(array('data_type' => 1,'field_id' => ('i' . $i . 'subscriber_sex'),'list_id' => 'sex', 'smallform' => 'true'), $result3['subscriber_sex'] ?? '');
                             ?>
                           </div>
                             <?php echo ($GLOBALS['omit_employers']) ? "<div class='d-none'>" : ""; ?>
@@ -678,9 +697,13 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                               <input type='entry' class='form-control' size='25' name='i<?php echo attr($i); ?>subscriber_employer_street' value="<?php echo attr($result3["subscriber_employer_street"] ?? ''); ?>" onchange="capitalizeMe(this);" />
                             </div>
                             <?php echo ($GLOBALS['omit_employers']) ? "</div>" : ""; ?>
-                          <label class='col-form-label col-md-1 mb-2 required'><?php echo xlt('Subscriber Address'); ?>:</label>
+                          <label class='col-form-label col-md-1 mb-2 required'><?php echo xlt('Subscriber Address Line 1'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <input type='entry' class='form-control' size='25' name='i<?php echo attr($i); ?>subscriber_street' value="<?php echo attr($result3["subscriber_street"] ?? ''); ?>" onchange="capitalizeMe(this);" />
+                          </div>
+                          <label class='col-form-label col-md-1 mb-2 required'><?php echo xlt('Subscriber Address Line 2'); ?>:</label>
+                          <div class="col-md-5 mb-2">
+                            <input type='entry' class='form-control' size='25' name='i<?php echo attr($i); ?>subscriber_street_line_2' value="<?php echo attr($result3["subscriber_street_line_2"] ?? ''); ?>" onchange="capitalizeMe(this);" />
                           </div>
                             <?php echo ($GLOBALS['omit_employers']) ? "<div class='d-none'>" : ""; ?>
                           <label class='col-form-label col-md-1 mb-2 required'><?php echo xlt('SE City'); ?>:</label>
@@ -696,14 +719,14 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                           <label class='col-form-label col-md-1 mb-2 required'><?php echo ($GLOBALS['phone_country_code'] == '1') ? xlt('SE State') : xlt('SE Locality') ?>:</label>
                           <div class="col-md-5 mb-2">
                             <?php
-                            generate_form_field(array('data_type' => $GLOBALS['state_data_type'],'field_id' => ('i' . $i . 'subscriber_employer_state'),'list_id' => $GLOBALS['state_list'],'fld_length' => '15','max_length' => '63','edit_options' => 'C'), ($result3['subscriber_employer_state'] ?? ''));
+                            generate_form_field(array('data_type' => $GLOBALS['state_data_type'],'field_id' => ('i' . $i . 'subscriber_employer_state'),'list_id' => $GLOBALS['state_list'],'fld_length' => '15','max_length' => '63','edit_options' => 'C', 'smallform' => 'true'), ($result3['subscriber_employer_state'] ?? ''));
                             ?>
                           </div>
                             <?php echo ($GLOBALS['omit_employers']) ? "</div>" : ""; ?>
                           <label class='col-form-label col-md-1 mb-2 required'><?php echo ($GLOBALS['phone_country_code'] == '1') ? xlt('State') : xlt('Locality') ?>:</label>
                           <div class="col-md-5 mb-2">
                             <?php
-                            generate_form_field(array('data_type' => $GLOBALS['state_data_type'], 'field_id' => ('i' . $i . 'subscriber_state'),'list_id' => $GLOBALS['state_list'],'fld_length' => '15','max_length' => '63','edit_options' => 'C'), ($result3['subscriber_state'] ?? ''));
+                            generate_form_field(array('data_type' => $GLOBALS['state_data_type'], 'field_id' => ('i' . $i . 'subscriber_state'),'list_id' => $GLOBALS['state_list'],'fld_length' => '15','max_length' => '63','edit_options' => 'C', 'smallform' => 'true'), ($result3['subscriber_state'] ?? ''));
                             ?>
                           </div>
                             <?php echo ($GLOBALS['omit_employers']) ? "<div class='d-none'>" : ""; ?>
@@ -720,21 +743,21 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                           <label class='col-form-label col-md-1 mb-2 required'><?php echo xlt('SE Country'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <?php
-                            generate_form_field(array('data_type' => $GLOBALS['country_data_type'],'field_id' => ('i' . $i . 'subscriber_employer_country'),'list_id' => $GLOBALS['country_list'],'fld_length' => '10','max_length' => '63','edit_options' => 'C'), ($result3['subscriber_employer_country'] ?? ''));
+                            generate_form_field(array('data_type' => $GLOBALS['country_data_type'],'field_id' => ('i' . $i . 'subscriber_employer_country'),'list_id' => $GLOBALS['country_list'],'fld_length' => '10','max_length' => '63','edit_options' => 'C', 'smallform' => 'true'), ($result3['subscriber_employer_country'] ?? ''));
                             ?>
                           </div>
                           <label class='col-form-label col-md-1 mb-2 required'><?php echo xlt('Country'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <?php
-                            generate_form_field(array('data_type' => $GLOBALS['country_data_type'],'field_id' => ('i' . $i . 'subscriber_country'),'list_id' => $GLOBALS['country_list'],'fld_length' => '10','max_length' => '63','edit_options' => 'C'), ($result3['subscriber_country'] ?? ''));
+                            generate_form_field(array('data_type' => $GLOBALS['country_data_type'],'field_id' => ('i' . $i . 'subscriber_country'),'list_id' => $GLOBALS['country_list'],'fld_length' => '10','max_length' => '63','edit_options' => 'C', 'smallform' => 'true'), ($result3['subscriber_country'] ?? ''));
                             ?>
                           </div>
                             <?php echo ($GLOBALS['omit_employers']) ? "</div>" : ""; ?>
-                          <label class='col-form-label col-md-1 mb-2 font-weight-bold'><?php echo xlt('Subscriber Phone'); ?>:</label>
+                          <label class='col-form-label col-md-1 mb-2'><?php echo xlt('Subscriber Phone'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <input type='text' class='form-control' size='20' name='i<?php echo attr($i); ?>subscriber_phone' value='<?php echo attr($result3["subscriber_phone"] ?? ''); ?>' onkeyup='phonekeyup(this,mypcc)' />
                           </div>
-                          <label class='col-form-label col-md-1 mb-2 font-weight-bold'><?php echo xlt('Co-Pay'); ?>:</label>
+                          <label class='col-form-label col-md-1 mb-2'><?php echo xlt('Co-Pay'); ?>:</label>
                           <div class="col-md-5 mb-2">
                             <input type='text' class='form-control' size="6" name='i<?php echo attr($i); ?>copay' value="<?php echo attr($result3["copay"] ?? ''); ?>" />
                           </div>
@@ -766,6 +789,7 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
                         </tr>
                     </table>
                 </form>
+                </div>
             </div>
         </div>
         <div class="row">
@@ -784,7 +808,7 @@ $constraints = LBF_Validation::generate_validate_constraints("DEM");
         </div>
     </div> <!--end of container div -->
 <!-- include support for the list-add selectbox feature -->
-<?php include($GLOBALS['fileroot'] . "/library/options_listadd.inc"); ?>
+<?php require($GLOBALS['fileroot'] . "/library/options_listadd.inc.php"); ?>
 <script>
 
 // hard code validation for old validation, in the new validation possible to add match rules
@@ -915,6 +939,8 @@ while ($lrow = sqlFetchArray($lres)) {
 
     $(".select-dropdown").select2({
         theme: "bootstrap4",
+        dropdownAutoWidth: true,
+        width: 'resolve',
         <?php require($GLOBALS['srcdir'] . '/js/xl/select2.js.php'); ?>
     });
     if (typeof error !== 'undefined') {

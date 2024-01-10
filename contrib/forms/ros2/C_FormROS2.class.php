@@ -6,12 +6,11 @@
 // modify it under the terms of the GNU General Public License
 // as published by the Free Software Foundation; either version 2
 
-require_once($GLOBALS['fileroot'] . "/library/forms.inc");
+require_once($GLOBALS['fileroot'] . "/library/forms.inc.php");
 require_once("FormROS2.class.php");
 
 class C_FormROS2 extends Controller
 {
-
     var $template_dir;
 
     function __construct($template_mod = "general")

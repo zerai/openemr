@@ -13,19 +13,18 @@
  */
 
 require_once("../globals.php");
-require_once("$srcdir/registry.inc");
+require_once("$srcdir/registry.inc.php");
 require_once("batchcom.inc.php");
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 
 // gacl control
 if (!AclMain::aclCheckCore('admin', 'notification')) {
-    echo "<html>\n<body>\n<h1>";
-    echo xlt('You are not authorized for this.');
-    echo "</h1>\n</body>\n</html>\n";
-    exit();
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("SMS Notification")]);
+    exit;
 }
 
 // process form
@@ -142,7 +141,7 @@ $sms_gateway = array ('CLICKATELL','TMB4');
             </div>
             <div class="row">
                 <div class="col-md-12 form-group">
-                    <label for="message"><?php echo xlt('SMS Text Usable Tags: '); ?>***NAME***, ***PROVIDER***, ***DATE***, ***STARTTIME***, ***ENDTIME*** (i.e. Dear ***NAME***):</label>
+                    <label for="message"><?php echo xlt('SMS Text Usable Tags:'); ?>***NAME***, ***PROVIDER***, ***DATE***, ***STARTTIME***, ***ENDTIME*** (i.e. Dear ***NAME***):</label>
                     <textarea class="form-control" cols="35" rows="8" name="message"><?php echo text($message); ?></textarea>
                 </div>
             </div>

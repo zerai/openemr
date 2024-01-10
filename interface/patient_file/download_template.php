@@ -10,11 +10,13 @@
  * @link      http://www.open-emr.org
  * @author    Rod Roark <rod@sunsetsystems.com>
  * @author    Brady Miller <brady.g.miller@gmail.com>
+ * @author    Ruth Moulton
  * @copyright Copyright (c) 2013-2014 Rod Roark <rod@sunsetsystems.com>
  * @copyright Copyright (c) 2018 Brady Miller <brady.g.miller@gmail.com>
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
+/* 3-feb-21 RM - addition of {CurrentDate} and {CurrentTime} */
 require_once('../globals.php');
 require_once($GLOBALS['srcdir'] . '/appointments.inc.php');
 require_once($GLOBALS['srcdir'] . '/options.inc.php');
@@ -57,12 +59,15 @@ function keyReplace(&$s, $data)
 // Do some final processing of field data before it's put into the document.
 function dataFixup($data, $title = '')
 {
-    global $groupLevel, $groupCount, $itemSeparator;
+    global $groupLevel, $groupCount, $itemSeparator, $ext;
     if ($data !== '') {
         // Replace some characters that can mess up XML without assuming XML content type.
         $data = str_replace('&', '[and]', $data);
         $data = str_replace('<', '[less]', $data);
         $data = str_replace('>', '[greater]', $data);
+        if ($ext == 'odt') {
+            $data = str_replace("\r\n", "<text:line-break />", $data);
+        }
         // If in a group, include labels and separators.
         if ($groupLevel) {
             if ($title !== '') {
@@ -105,7 +110,7 @@ function getIssues($type)
 function doSubs($s)
 {
     global $ptrow, $hisrow, $enrow, $nextLocation, $keyLocation, $keyLength;
-    global $groupLevel, $groupCount, $itemSeparator, $pid, $encounter;
+    global $groupLevel, $groupCount, $itemSeparator, $pid, $encounter, $ext;
 
     $nextLocation = 0;
     $groupLevel   = 0;
@@ -207,6 +212,42 @@ function doSubs($s)
             $s = keyReplace($s, dataFixup(getIssues('medication'), xl('Medications')));
         } elseif (keySearch($s, '{ProblemList}')) {
             $s = keyReplace($s, dataFixup(getIssues('medical_problem'), xl('Problem List')));
+        } elseif (preg_match('/^{CurrentDate:?.*}/', substr($s, $keyLocation), $matches)) {
+           /* defaults to ISO standard date format yyyy-mm-dd
+            * modified by string following ':' as follows
+            * 'global' will use the global date format setting
+            * 'YYYY-MM-DD', 'MM/DD/YYYY', 'DD/MM/YYYY' overide the global setting
+            * anything else is ignored
+            *
+            * oeFormatShortDate($date = 'today', $showYear = true) - OpenEMR function to format
+            * date using global setting, defaults to ISO standard yyyy-mm-dd
+           */
+            $keyLength = strlen($matches[0]);
+            $matched = $matches[0];
+            $format = 'Y-m-d'; /* default yyyy-mm-dd */
+            $currentdate = '';
+            if (preg_match('/GLOBAL/i', $matched, $matches)) {
+                /* use global setting */
+                $currentdate = oeFormatShortDate(date('Y-m-d'), true);
+            } elseif (
+                /* there's an overiding format */
+                    preg_match('/YYYY-MM-DD/i', $matched, $matches)
+            ) {
+                   /* nothing to do here as this is the default format */
+            } elseif (preg_match('[MM/DD/YYYY]i', $matched, $matches)) {
+                   $format = 'm/d/Y';
+            } elseif (preg_match('[DD/MM/YYYY]i', $matched, $matches)) {
+                   $format = 'd/m/Y';
+            }
+
+            if (!$currentdate) {
+                $currentdate = date($format);  /* get the current date in specified format */
+            }
+            $s = keyReplace($s, dataFixup($currentdate, xl('Date')));
+        } elseif (keySearch($s, '{CurrentTime}')) {
+            $format = 'H:i';  /* 24 hour clock with leading zeros */
+            $currenttime = date($format); /* format to hh:mm for local time zone */
+            $s = keyReplace($s, dataFixup($currenttime, xl('Time')));
         } elseif (keySearch($s, '{GRP}')) { // This tag indicates the fields from here until {/GRP} are a group
             // of fields separated by semicolons.  Fields with no data are omitted, and fields with
             // data are prepended with their field label from the form layout.
@@ -217,7 +258,6 @@ function doSubs($s)
             if ($groupLevel > 0) {
                 --$groupLevel;
             }
-
             $s = keyReplace($s, '');
         } elseif (preg_match('/^\{ITEMSEP\}(.*?)\{\/ITEMSEP\}/', substr($s, $keyLocation), $matches)) {
             // This is how we specify the separator between group items in a way that

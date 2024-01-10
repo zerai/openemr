@@ -14,9 +14,9 @@
  */
 
 require_once("../../globals.php");
-require_once("$srcdir/transactions.inc");
+require_once("$srcdir/transactions.inc.php");
 require_once("$srcdir/options.inc.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 
 $template_file = $GLOBALS['OE_SITE_DIR'] . "/referral_template.html";
 
@@ -151,10 +151,10 @@ if (empty($facrow['facility_npi'])) {
 }
 
 // Generate link to MA logo if it exists.
-$logo = "<!-- '$ma_logo_path' does not exist. -->";
+$logo = "";
 $ma_logo_path = "sites/" . $_SESSION['site_id'] . "/images/ma_logo.png";
 if (is_file("$webserver_root/$ma_logo_path")) {
-    $logo = "<img src='$web_root/$ma_logo_path' style='height:" . round(9 * 5.14) . "pt' />";
+    $logo = "$web_root/$ma_logo_path";
 }
 
 $s = '';
@@ -167,7 +167,7 @@ fclose($fh);
 
 $s = str_replace("{header1}", genFacilityTitle($TEMPLATE_LABELS['label_form1_title'], -1, $logo), $s);
 $s = str_replace("{header2}", genFacilityTitle($TEMPLATE_LABELS['label_form2_title'], -1, $logo), $s);
-$s = str_replace("{fac_name}", text($facrow['name']), $s);
+$s = str_replace("{fac_name}", text($facrow['name'] ?? ''), $s);
 $s = str_replace("{fac_facility_npi}", text($facrow['facility_npi']), $s);
 $s = str_replace("{ref_id}", text($trow['id']), $s);
 $s = str_replace("{ref_pid}", text($patient_id), $s);
@@ -215,8 +215,10 @@ foreach ($TEMPLATE_LABELS as $key => $value) {
     $s = str_replace("{" . $key . "}", $value, $s);
 }
 
-foreach ($insurancedata as $key => $value) {
-    $s = str_replace("{insurance_$key}", text($value), $s);
+if (!empty($insurancedata)) {
+    foreach ($insurancedata as $key => $value) {
+        $s = str_replace("{insurance_$key}", text($value), $s);
+    }
 }
 
 // A final pass to clear any unmatched variables:

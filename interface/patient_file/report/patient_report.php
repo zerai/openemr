@@ -15,11 +15,13 @@
  */
 
 require_once("../../globals.php");
-require_once("$srcdir/lists.inc");
-require_once("$srcdir/forms.inc");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/lists.inc.php");
+require_once("$srcdir/forms.inc.php");
+require_once("$srcdir/patient.inc.php");
 
 use OpenEMR\Common\Acl\AclMain;
+use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 use OpenEMR\Events\PatientReport\PatientReportEvent;
 use OpenEMR\Menu\PatientMenuRole;
@@ -28,7 +30,8 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\EventDispatcher\GenericEvent;
 
 if (!AclMain::aclCheckCore('patients', 'pat_rep')) {
-    die(xlt('Not authorized'));
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Patient Reports")]);
+    exit;
 }
 // get various authorization levels
 $auth_notes_a  = AclMain::aclCheckCore('encounters', 'notes_a');
@@ -39,12 +42,12 @@ $auth_relaxed  = AclMain::aclCheckCore('encounters', 'relaxed');
 $auth_med      = AclMain::aclCheckCore('patients', 'med');
 $auth_demo     = AclMain::aclCheckCore('patients', 'demo');
 
-$oefax = !empty($GLOBALS['oefax_enable']) ? $GLOBALS['oefax_enable'] : 0;
 /**
  * @var EventDispatcherInterface $eventDispatcher  The event dispatcher / listener object
  */
 $eventDispatcher = $GLOBALS['kernel']->getEventDispatcher();
 ?>
+<!DOCTYPE>
 <html>
 <head>
 <title><?php echo xlt("Patient Reports"); ?></title>
@@ -170,6 +173,7 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                                 <br/>
                                 <br/>
                                 <button type="button" class="viewCCD btn btn-primary btn-save btn-sm" value="<?php echo xla('Generate Report'); ?>" ><?php echo xlt('Generate Report'); ?></button>
+                                <button type="button" class="viewNewCCD btn btn-primary btn-save btn-sm" value="<?php echo xla('Generate Report'); ?>" ><?php echo xlt('Generate New Report'); ?></button>
                                 <button type="button" class="viewCCD_download btn btn-primary btn-download btn-sm" value="<?php echo xla('Download'); ?>" ><?php echo xlt('Download'); ?></button>
                                 <?php
                                 if ($GLOBALS['phimail_enable'] == true && $GLOBALS['phimail_ccd_enable'] == true) { ?>
@@ -267,9 +271,9 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                         <button type="button" class="genpdfrep btn btn-primary btn-download btn-sm" value="<?php echo xla('Download PDF'); ?>" ><?php echo xlt('Download PDF'); ?></button>
 
                         <?php
-                        if ($oefax) {
-                            $eventDispatcher->dispatch(PatientReportEvent::ACTIONS_RENDER_POST, new GenericEvent());
-                        }
+
+                            $eventDispatcher->dispatch(new GenericEvent(), PatientReportEvent::ACTIONS_RENDER_POST);
+
                         ?>
                         <input type='hidden' name='pdf' value='0' />
                         <br />
@@ -329,7 +333,7 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                                                 echo attr($ierow['encounter']) . "/";
                                             }
 
-                                            echo "' />$disptitle</td>\n";
+                                            echo "' />" . text($disptitle) . "</td>\n";
                                             echo "     <td>" . text($prow['begdate']);
 
                                             if ($prow['enddate']) {
@@ -381,7 +385,7 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                                             if ($result["form_name"] == "New Patient Encounter") {
                                                 if ($isfirst == 0) {
                                                     foreach ($registry_form_name as $var) {
-                                                        if ($toprint = $html_strings[$var]) {
+                                                        if ($toprint = ($html_strings[$var] ?? '')) {
                                                             foreach ($toprint as $var) {
                                                                 print $var;
                                                             }
@@ -432,7 +436,7 @@ $oemr_ui = new OemrUI($arrOeUiSettings);
                                                         }
                                                     }
                                                 }
-                                                if (!is_array($html_strings[$form_name])) {
+                                                if (empty($html_strings[$form_name]) || !is_array($html_strings[$form_name])) {
                                                     $html_strings[$form_name] = array();
                                                 }
                                                 array_push($html_strings[$form_name], "<input type='checkbox' " .
@@ -620,6 +624,23 @@ $(function () {
         top.restoreSession();
         $("#ccr_form").submit();
     });
+    $(".viewNewCCD").click(function() {
+        // there's a lot of ways to do this but for now, we'll go with this!
+        top.restoreSession();
+        let url = './../../../ccdaservice/ccda_gateway.php?action=report_ccd_view&csrf_token_form=' +
+            encodeURIComponent("<?php echo CsrfUtils::collectCsrfToken() ?>");
+        fetch(url, {
+            credentials: 'same-origin',
+            method: 'GET',
+        })
+        .then(response => response.text())
+        .then(response => {
+            let view = window.open('about:blank', '_blank');
+            view.document.write(response);
+            view.document.close();
+            return false;
+        })
+    });
     $(".viewCCD").click(function() {
         var ccrAction = document.getElementsByName('ccrAction');
         ccrAction[0].value = 'viewccd';
@@ -733,9 +754,9 @@ $(function () {
     <?php } ?>
 
     <?php
-    if ($oefax) {
-        $eventDispatcher->dispatch(PatientReportEvent::JAVASCRIPT_READY_POST, new GenericEvent());
-    }
+        //event dispatch
+        $eventDispatcher->dispatch(new GenericEvent(), PatientReportEvent::JAVASCRIPT_READY_POST);
+
     ?>
 
 });
@@ -743,17 +764,17 @@ $(function () {
 // select/deselect the Forms related to the selected Encounter
 // (it ain't pretty code folks)
 var SelectForms = function (selectedEncounter) {
-    if ($(selectedEncounter).attr("checked")) {
+    if ($(selectedEncounter).prop("checked")) {
         $(selectedEncounter).parent().children().each(function(i, obj) {
             $(this).children().each(function(i, obj) {
-                $(this).attr("checked", "checked");
+                $(this).prop("checked", true);
             });
         });
     }
     else {
         $(selectedEncounter).parent().children().each(function(i, obj) {
             $(this).children().each(function(i, obj) {
-                $(this).removeAttr("checked");
+                $(this).prop("checked", false);
             });
         });
     }
@@ -762,7 +783,7 @@ var SelectForms = function (selectedEncounter) {
 // When an issue is checked, auto-check all the related encounters and forms
 function issueClick(issue) {
     // do nothing when unchecked
-    if (! $(issue).attr("checked")) return;
+    if (! $(issue).prop("checked")) return;
 
     $("#report_form :checkbox").each(function(i, obj) {
         if ($(issue).val().indexOf('/' + $(this).val() + '/') >= 0) {

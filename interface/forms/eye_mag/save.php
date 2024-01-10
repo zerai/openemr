@@ -31,19 +31,20 @@ $form_folder = "eye_mag";
 
 require_once(__DIR__ . "/../../globals.php");
 
-require_once("$srcdir/api.inc");
-require_once("$srcdir/forms.inc");
+require_once("$srcdir/api.inc.php");
+require_once("$srcdir/forms.inc.php");
 require_once("php/" . $form_name . "_functions.php");
 require_once($srcdir . "/../controllers/C_Document.class.php");
 require_once($srcdir . "/documents.php");
-require_once("$srcdir/patient.inc");
+require_once("$srcdir/patient.inc.php");
 require_once("$srcdir/options.inc.php");
-require_once("$srcdir/lists.inc");
-require_once("$srcdir/report.inc");
+require_once("$srcdir/lists.inc.php");
+require_once("$srcdir/report.inc.php");
 
 use Mpdf\Mpdf;
 use OpenEMR\Billing\BillingUtilities;
 use OpenEMR\Common\Logging\EventAuditLogger;
+use OpenEMR\Pdf\Config_Mpdf;
 
 $returnurl = 'encounter_top.php';
 
@@ -51,13 +52,13 @@ if (isset($_REQUEST['id'])) {
     $id = $_REQUEST['id'];
 }
 
-if (!$id) {
+if (!($id ?? '')) {
     $id = $_REQUEST['pid'];
 }
 
-$encounter = $_REQUEST['encounter'];
+$encounter = $_REQUEST['encounter'] ?? '';
 
-$AJAX_PREFS = $_REQUEST['AJAX_PREFS'];
+$AJAX_PREFS = $_REQUEST['AJAX_PREFS'] ?? '';
 if ($encounter == "" && !$id && !$AJAX_PREFS && (($_REQUEST['mode'] != "retrieve") or ($_REQUEST['mode'] == "show_PDF"))) {
     echo "Sorry Charlie..."; //should lead to a database of errors for explanation.
     exit;
@@ -66,7 +67,7 @@ if ($encounter == "" && !$id && !$AJAX_PREFS && (($_REQUEST['mode'] != "retrieve
 /**
  * Save/update the preferences
  */
-if ($_REQUEST['AJAX_PREFS']) {
+if ($_REQUEST['AJAX_PREFS'] ?? '') {
     $query = "REPLACE INTO " . $table_name . "_prefs (PEZONE,LOCATION,LOCATION_text,id,selection,ZONE_ORDER,GOVALUE,ordering)
                 VALUES
                 ('PREFS','VA','Vision',?,'RS','51',?,'1')";
@@ -247,8 +248,8 @@ if ($encounter == "") {
     $encounter = date("Ymd");
 }
 
-$form_id = $_REQUEST['form_id'];
-$zone = $_REQUEST['zone'];
+$form_id = $_REQUEST['form_id'] ?? '';
+$zone = $_REQUEST['zone'] ?? '';
 
 $providerID = findProvider($pid, $encounter);
 if ($providerID == '0') {
@@ -260,7 +261,7 @@ if ($providerID == '0') {
 // If the DB shows a uniqueID ie. an owner, and the save request uniqueID does not = the uniqueID in the DB,
 // ask if the new user wishes to take ownership?
 // If yes, any other's attempt to save fields/form are denied and the return code says you are not the owner...
-if ($_REQUEST['unlock'] === '1') {
+if (($_REQUEST['unlock'] ?? null) === '1') {
     // we are releasing the form, by closing the page or clicking on ACTIVE FORM, so unlock it.
     // if it's locked and they own it ($REQUEST[LOCKEDBY] == LOCKEDBY), they can unlock it
     $query = "SELECT LOCKED,LOCKEDBY,LOCKEDDATE from form_eye_locking WHERE ID=?";
@@ -271,7 +272,7 @@ if ($_REQUEST['unlock'] === '1') {
     }
 
     exit;
-} elseif ($_REQUEST['acquire_lock'] === "1") {
+} elseif (($_REQUEST['acquire_lock'] ?? null) === "1") {
     //we are taking over the form's active state, others will go read-only
     $query = "UPDATE form_eye_locking set LOCKED='1',LOCKEDBY=? where id=?";//" and LOCKEDBY=?";
     $result = sqlQuery($query, array($_REQUEST['uniqueID'], $form_id ));
@@ -283,7 +284,7 @@ if ($_REQUEST['unlock'] === '1') {
 } else {
     $query = "SELECT LOCKED,LOCKEDBY,LOCKEDDATE from form_eye_locking WHERE ID=?";
     $lock = sqlQuery($query, array($form_id));
-    if (($lock['LOCKED']) && ($_REQUEST['uniqueID'] != $lock['LOCKEDBY'])) {
+    if (($lock['LOCKED'] ?? '') && ($_REQUEST['uniqueID'] != $lock['LOCKEDBY'])) {
         // This session not the owner or it is not new so it is locked
         // Did the user send a demand to take ownership?
         if ($lock['LOCKEDBY'] != $_REQUEST['ownership']) {
@@ -302,19 +303,19 @@ if ($_REQUEST['unlock'] === '1') {
             sqlQuery($query, array('1', $_REQUEST['LOCKEDBY'], $form_id));
             //go on to save what we want...
         }
-    } elseif (!$lock['LOCKED']) { // it is not locked yet
+    } elseif (!($lock['LOCKED'] ?? '')) { // it is not locked yet
         $_REQUEST['LOCKED'] = '1';
         $query = "update form_eye_locking set LOCKED=?,LOCKEDBY=?,LOCKEDDATE=NOW() where id=?";
-        sqlQuery($query, array('1', $_REQUEST['LOCKEDBY'], $form_id));
+        sqlQuery($query, array('1', ($_REQUEST['LOCKEDBY'] ?? ''), $form_id));
         //go on to save what we want...
     }
 
-    if (!$_REQUEST['LOCKEDBY']) {
+    if (!($_REQUEST['LOCKEDBY'] ?? '')) {
         $_REQUEST['LOCKEDBY'] = rand();
     }
 }
 
-if ($_REQUEST["mode"] == "new") {
+if (($_REQUEST["mode"]  ?? '') == "new") {
     $base_array = array();
     $newid = formSubmit('form_eye_base', '', $id, $userauthorized);
 
@@ -329,10 +330,10 @@ if ($_REQUEST["mode"] == "new") {
         $query = "INSERT INTO " . $table_name . " ('id','pid') VALUES (?,?)";
         $result = sqlStatement($query, array($new_id,$pid));
     }
-} elseif ($_REQUEST["mode"] == "update") {
+} elseif (($_REQUEST["mode"]  ?? '') == "update") {
     // The user has write privileges to work with...
 
-    if ($_REQUEST['action'] == "store_PDF") {
+    if (($_REQUEST['action'] ?? '') == "store_PDF") {
          /**
           * We want to store/overwrite the current PDF version of this encounter's f
           * Currently this is only called 'beforeunload', ie. when you finish the form
@@ -358,23 +359,7 @@ if ($_REQUEST["mode"] == "new") {
         $sql = "DELETE from documents where documents.url like ?";
         sqlQuery($sql, ['%' . $filename]);
         // We want to overwrite so only one PDF is stored per form/encounter
-        $config_mpdf = array(
-            'tempDir' => $GLOBALS['MPDF_WRITE_DIR'],
-            'mode' => $GLOBALS['pdf_language'],
-            'format' => $GLOBALS['pdf_size'],
-            'default_font_size' => '9',
-            'default_font' => '',
-            'margin_left' => $GLOBALS['pdf_left_margin'],
-            'margin_right' => $GLOBALS['pdf_right_margin'],
-            'margin_top' => $GLOBALS['pdf_top_margin'],
-            'margin_bottom' => $GLOBALS['pdf_bottom_margin'],
-            'margin_header' => '',
-            'margin_footer' => '',
-            'orientation' => $GLOBALS['pdf_layout'],
-            'shrink_tables_to_fit' => 1,
-            'use_kwt' => true,
-            'keep_table_proportions' => true
-        );
+        $config_mpdf = Config_Mpdf::getConfigMpdf();
         $pdf = new mPDF($config_mpdf);
         if ($_SESSION['language_direction'] == 'rtl') {
             $pdf->SetDirectionality('rtl');
@@ -397,23 +382,6 @@ if ($_REQUEST["mode"] == "new") {
 
         global $web_root, $webserver_root;
         $content = ob_get_clean();
-        // Fix a nasty html2pdf bug - it ignores document root!
-        $i = 0;
-        $wrlen = strlen($web_root);
-        $wsrlen = strlen($webserver_root);
-        while (true) {
-            $i = stripos($content, " src='/", $i + 1);
-            if ($i === false) {
-                break;
-            }
-
-            if (
-                substr($content, $i + 6, $wrlen) === $web_root &&
-                substr($content, $i + 6, $wsrlen) !== $webserver_root
-            ) {
-                $content = substr($content, 0, $i + 6) . $webserver_root . substr($content, $i + 6 + $wrlen);
-            }
-        }
         // Below is for including style sheet for report specific styles. Left here for future use.
         //$styles = file_get_contents('../css/report.css');
         //$pdf->writeHTML($styles, 1);
@@ -437,7 +405,7 @@ if ($_REQUEST["mode"] == "new") {
 
     // Store the IMPPLAN area.  This is separate from the rest of the form
     // It is in a separate table due to its one-to-many relationship with the form_id.
-    if ($_REQUEST['action'] == "store_IMPPLAN") {
+    if (($_REQUEST['action'] ?? '') == "store_IMPPLAN") {
         $IMPPLAN = json_decode($_REQUEST['parameter'], true);
         //remove what is there and replace it with this data.
         $query = "DELETE from form_" . $form_folder . "_impplan where form_id=? and pid=?";
@@ -457,22 +425,24 @@ if ($_REQUEST["mode"] == "new") {
     }
 
     //change PCP/referring doc
-    if ($_REQUEST['action'] == 'docs') {
-        $query = "update patient_data set ref_providerID=?,referrerID=? where pid =?";
-        sqlQuery($query, array($_REQUEST['pcp'], $_REQUEST['rDOC'], $pid));
+    if (($_POST['action'] ?? '') == 'docs') {
+        $query = "update patient_data set ref_providerID=?,providerID=? where pid =?";
+        sqlQuery($query, array($_POST['rDOC'], $_POST['pcp'], $pid));
 
-        if ($_REQUEST['pcp']) {
+        if ($_POST['pcp']) {
             //return PCP's data to end user to update their form
             $query = "SELECT * FROM users WHERE id =?";
-            $DOC1 = sqlQuery($query, array($_REQUEST['pcp']));
+            $DOC1 = sqlQuery($query, array($_POST['pcp']));
             $DOCS['pcp']['name'] = $DOC1['fname'] . " " . $DOC1['lname'];
             if ($DOC1['suffix']) {
                 $DOCS['pcp']['name'] .= ", " . $DOC1['suffix'];
             }
-            $DOCS['pcp']['address'] = $DOC1['organization'] . "<br />" . $DOC1['street'] . "<br />" . $DOC1['city'] . ", " . $DOC1['state'] . "  " . $DOC1['zip'] . "<br />";
-            $DOCS['pcp']['fax'] = $DOC1['fax'];
-            $DOCS['pcp']['phone'] = $DOC1['phonew1'];
-
+            $DOCS['pcp']['address'] =  $DOC1['street'] . "<br />" . $DOC1['city'] . ", " . $DOC1['state'] . "  " . $DOC1['zip'] . "<br />";
+            if (!empty($DOC1['organization'])) {
+                $DOCS['pcp']['address'] = $DOC1['organization'] . "<br />" . $DOCS['pcp']['address'];
+            }
+            $DOCS['pcp']['fax']     = $DOC1['fax'];
+            $DOCS['pcp']['phone']   = $DOC1['phonew1'];
             // does the fax already exist?
             $query = "SELECT * FROM form_taskman WHERE TO_ID=? AND PATIENT_ID=? AND ENC_ID=?";
             $FAX_PCP = sqlQuery($query, array($_REQUEST['pcp'], $pid, $encounter));
@@ -481,16 +451,19 @@ if ($_REQUEST["mode"] == "new") {
                                             <span id='status_Fax_pcp'>
                                                 <a href='" . $webroot . "/controller.php?document&view&patient_id=" . $pid . "&doc_id=" . $FAX_PCP['DOC_ID'] . "'
                                                     target='_blank' title='" . xla('View the Summary Report sent via Fax Server on') . " " . $FAX_PCP['COMPLETED_DATE'] . ".'>
-                                                    <i class='fa fa-file-pdf-o fa-fw'></i>
+                                                    <i class='far fa-file-pdf fa-fw'></i>
                                                 </a>
-                                                <i class='fa fa-repeat fa-fw' onclick=\"top . restoreSession(); create_task('" . attr($_REQUEST['pcp']) . "','Fax-resend','ref'); return false;\"></i>
+                                                <i class='fas fa-redo fa-fw'
+                                                   title='" . xla("Click to Re-Send this fax") . "'
+                                                   onclick=\"top.restoreSession(); create_task('" . attr($_REQUEST['pcp']) . "','Fax-resend','ref'); return false;\"></i>
                                             </span>";
             } else {
-                $DOCS['pcp']['fax_info'] = '
-                <a href="#" onclick="top.restoreSession(); create_task(\'' . attr($_REQUEST['pcp']) . '\',\'Fax\',\'pcp\'); return false;">
-                    ' . text($DOC1['fax']) . '&nbsp;&nbsp;
-                    <span id="status_Fax_pcp"><i class="fa fa-fax fa-fw"></i></span>
-                </a>';
+                $DOCS['pcp']['fax_info'] = ' &nbsp;&nbsp;
+                    <a href="JavaScript:void(0);"
+                       title="' . xla('Send a report to this provider') . '"
+                       onclick="top.restoreSession(); create_task(\'' . attr($_REQUEST['pcp']) . '\',\'Fax\',\'pcp\'); return false;">
+                       <i class="fa fa-fax fa-fw"></i>
+                    </a>';
             }
         }
 
@@ -513,20 +486,23 @@ if ($_REQUEST["mode"] == "new") {
             $query = "SELECT * FROM form_taskman WHERE TO_ID=? AND PATIENT_ID=? AND ENC_ID=?";
             $FAX_REF = sqlQuery($query, array($_REQUEST['rDOC'], $pid, $encounter));
             if ($FAX_REF['ID'] > '') { //it is here already, make them print and manually fax it.  Show icon
-                $DOCS['ref']['fax_info'] = text($DOC2['fax']) . "&nbsp;&nbsp;
+                $DOCS['ref']['fax_info'] = "&nbsp;&nbsp;
                                             <span id='status_Fax_ref'>
                                                 <a href='" . $webroot . "/controller.php?document&view&patient_id=" . $pid . "&doc_id=" . $FAX_REF['DOC_ID'] . "'
                                                     target='_blank' title='" . xla('View the Summary Report sent via Fax Server on') . " " . $FAX_REF['COMPLETED_DATE'] . ".'>
-                                                    <i class='fa fa-file-pdf-o fa-fw'></i>
+                                                    <i class='far fa-file-pdf fa-fw'></i>
                                                 </a>
-                                                <i class='fa fa-repeat fa-fw' onclick=\"top . restoreSession(); create_task('" . attr($_REQUEST['rDOC']) . "','Fax-resend','ref'); return false;\"></i>
+                                                <i class='fas fa-redo fa-fw'
+                                                    title='" . xla("Click to Re-Send this fax") . "'
+                                                   onclick=\"top . restoreSession(); create_task('" . attr($_REQUEST['rDOC']) . "','Fax-resend','ref'); return false;\"></i>
                                             </span>";
             } else {
-                $DOCS['ref']['fax_info'] = '
-                <a href="#" onclick="top.restoreSession(); create_task(\'' . attr($_REQUEST['rDOC']) . '\',\'Fax\',\'ref\'); return false;">
-                    ' . text($DOC2['fax']) . '&nbsp;&nbsp;
-                    <span id="status_Fax_ref"><i class="fa fa-fax fa-fw"></i></span>
-                </a>';
+                $DOCS['ref']['fax_info'] = '&nbsp;&nbsp;
+                    <a href="JavaScript:void(0);"
+                       title="' . xla('Send a report to this provider') . '"
+                       onclick="top.restoreSession(); create_task(\'' . attr($_REQUEST['rDOC']) . '\',\'Fax\',\'ref\'); return false;">
+                        <span id="status_Fax_ref"><i class="fas fa-fax fa-fw"></i></span>
+                    </a>';
             }
         }
 
@@ -535,19 +511,19 @@ if ($_REQUEST["mode"] == "new") {
     }
 
     /*** START CODE to DEAL WITH PMSFH/ISUUE_TYPES  ****/
-    if ($_REQUEST['PMSFH_save'] == '1') {
+    if (($_REQUEST['PMSFH_save'] ?? '') == '1') {
         if (!$PMSFH) {
             $PMSFH = build_PMSFH($pid);
         }
 
         $issue = $_REQUEST['issue'];
-        $deletion = $_REQUEST['deletion'];
+        $deletion = $_REQUEST['deletion'] ?? '';
         $form_save = $_REQUEST['form_save'];
         $pid = $_SESSION['pid'];
         $encounter = $_SESSION['encounter'];
         $form_id = $_REQUEST['form_id'];
         $form_type = $_REQUEST['form_type'];
-        $r_PMSFH = $_REQUEST['r_PMSFH'];
+        $r_PMSFH = $_REQUEST['r_PMSFH'] ?? '';
         if ($deletion == 1) {
             row_delete("issue_encounter", "list_id = '" . add_escape_custom($issue) . "'");
             row_delete("lists", "id = '" . add_escape_custom($issue) . "'");
@@ -694,6 +670,7 @@ if ($_REQUEST["mode"] == "new") {
                 }
 
                 if ($issue != '0') { //if this issue already exists we are updating it...
+                    // TODO: @adunsulag do we need to have the eye-form use the PatientIssuesService?
                     $query = "UPDATE lists SET " .
                         "type = '" . add_escape_custom($form_type) . "', " .
                         "title = '" . add_escape_custom($_REQUEST['form_title']) . "', " .
@@ -762,13 +739,13 @@ if ($_REQUEST["mode"] == "new") {
         }
     }
 
-    if ($_REQUEST['action'] == 'code_PMSFH') {
+    if (($_REQUEST['action'] ?? '') == 'code_PMSFH') {
         $query = "UPDATE lists SET diagnosis = ? WHERE id = ?";
         sqlStatement($query, array($_POST['code'], $_POST['issue']));
         exit;
     }
 
-    if ($_REQUEST['action'] == 'code_visit') {
+    if (($_REQUEST['action'] ?? '') == 'code_visit') {
         $CODING = json_decode($_REQUEST['parameter'], true);
         $query = "delete from billing where encounter =?";
         sqlStatement($query, array($encounter));
@@ -794,6 +771,7 @@ if ($_REQUEST["mode"] == "new") {
                 $item["units"] = $res["units"];
                 $item["fee"] = $res["pr_price"];
             }
+            $billed = "0";
             $item["justify"] .= ":";
             BillingUtilities::addBilling($encounter, $item["codetype"], $item["code"], $item["codedesc"], $pid, '1', $providerID, $item["modifier"], $item["units"], $item["fee"], $ndc_info, $item["justify"], $billed, '');
         }
@@ -802,7 +780,7 @@ if ($_REQUEST["mode"] == "new") {
     }
 
 
-    if ($_REQUEST['action'] == 'new_pharmacy') {
+    if (($_REQUEST['action']  ?? '') == 'new_pharmacy') {
         $query = "UPDATE patient_data set pharmacy_id=? where pid=?";
         sqlStatement($query, array($_POST['new_pharmacy'], $pid));
         echo "Pharmacy updated";
@@ -812,7 +790,7 @@ if ($_REQUEST["mode"] == "new") {
     //Update the visit status for this appointment (from inside the Coding Engine)
     //we also have to update the flow board...  They are not linked automatically.
     //Flow board counts items for each events so we need to insert new item and update total for the event, via pc_eid...
-    if ($_REQUEST['action'] == 'new_appt_status') {
+    if (($_REQUEST['action'] ?? '') == 'new_appt_status') {
         if ($_POST['new_status']) {
             //make sure visit_date is in YYYY-MM-DD format
             $Vdated = new DateTime($_POST['visit_date']);
@@ -869,7 +847,7 @@ if ($_REQUEST["mode"] == "new") {
             $okthen = sqlQuery($ORDERS_sql, array($form_id, $pid, $_POST['PLAN'][$i], $i, 'pending', $visit_date, $providerID));
         }
 
-        $_POST['PLAN'] = mb_substr($fields['PLAN'], 0, -1); //get rid of trailing "|"
+        $_POST['PLAN'] = mb_substr(($fields['PLAN'] ?? ''), 0, -1); //get rid of trailing "|"
     }
 
     $M = empty($_POST['TEST']) ? 0 : count($_POST['TEST']);
@@ -913,63 +891,63 @@ if ($_REQUEST["mode"] == "new") {
         $_POST['DIL_RISKS'] = '0';
     }
 
-    if (!$_POST['ATROPINE']) {
+    if (!($_POST['ATROPINE'] ?? '')) {
         $_POST['ATROPINE'] = '0';
     }
 
-    if (!$_POST['CYCLOGYL']) {
+    if (!($_POST['CYCLOGYL'] ?? '')) {
         $_POST['CYCLOGYL'] = '0';
     }
 
-    if (!$_POST['CYCLOMYDRIL']) {
+    if (!($_POST['CYCLOMYDRIL'] ?? '')) {
         $_POST['CYCLOMYDRIL'] = '0';
     }
 
-    if (!$_POST['NEO25']) {
+    if (!($_POST['NEO25'] ?? '')) {
         $_POST['NEO25'] = '0';
     }
 
-    if (!$_POST['TROPICAMIDE']) {
+    if (!($_POST['TROPICAMIDE'] ?? '')) {
         $_POST['TROPICAMIDE'] = '0';
     }
 
-    if (!$_POST['BALANCED']) {
+    if (!($_POST['BALANCED'] ?? '')) {
         $_POST['BALANCED'] = '0';
     }
 
-    if (!$_POST['ODVF1']) {
+    if (!($_POST['ODVF1'] ?? '')) {
         $_POST['ODVF1'] = '0';
     }
 
-    if (!$_POST['ODVF2']) {
+    if (!($_POST['ODVF2'] ?? '')) {
         $_POST['ODVF2'] = '0';
     }
 
-    if (!$_POST['ODVF3']) {
+    if (!($_POST['ODVF3'] ?? '')) {
         $_POST['ODVF3'] = '0';
     }
 
-    if (!$_POST['ODVF4']) {
+    if (!($_POST['ODVF4'] ?? '')) {
         $_POST['ODVF4'] = '0';
     }
 
-    if (!$_POST['OSVF1']) {
+    if (!($_POST['OSVF1'] ?? '')) {
         $_POST['OSVF1'] = '0';
     }
 
-    if (!$_POST['OSVF2']) {
+    if (!($_POST['OSVF2'] ?? '')) {
         $_POST['OSVF2'] = '0';
     }
 
-    if (!$_POST['OSVF3']) {
+    if (!($_POST['OSVF3'] ?? '')) {
         $_POST['OSVF3'] = '0';
     }
 
-    if (!$_POST['OSVF4']) {
+    if (!($_POST['OSVF4'] ?? '')) {
         $_POST['OSVF4'] = '0';
     }
 
-    if (!$_POST['TEST']) {
+    if (!($_POST['TEST'] ?? '')) {
         $_POST['Resource'] = '';
     }
 
@@ -977,7 +955,7 @@ if ($_REQUEST["mode"] == "new") {
         $_POST['PLAN'] = ' ';
     }
 
-    $tables = array('form_eye_hpi','form_eye_ros','form_eye_vitals',
+    $tables = array('form_eye_hpi','form_eye_vitals',
         'form_eye_acuity','form_eye_refraction','form_eye_biometrics',
         'form_eye_external', 'form_eye_antseg','form_eye_postseg',
         'form_eye_neuro','form_eye_locking');
@@ -1010,7 +988,7 @@ if ($_REQUEST["mode"] == "new") {
                 ) {
                     continue;
                 }
-                $fields[] = $_POST[$row['Field']] ?: '';
+                $fields[] = $_POST[$row['Field']] ?? '';
                 $sql2 .= " " . add_escape_custom($row['Field']) . " = ?,";
             }
             $sql = "update " . escape_table_name($table_name) . " set pid ='" . add_escape_custom($_SESSION['pid']) . "'," . $sql2;
@@ -1039,7 +1017,7 @@ if ($_REQUEST["mode"] == "new") {
             sqlQuery($query, array($encounter, $form_id, $pid, $rx_number, $_POST['ODSPH_1'], $_POST['ODCYL_1'], $_POST['ODAXIS_1'],
                 $_POST['ODVA_1'], $_POST['ODADD_1'], $_POST['ODNEARVA_1'], $_POST['OSSPH_1'], $_POST['OSCYL_1'], $_POST['OSAXIS_1'],
                 $_POST['OSVA_1'], $_POST['OSADD_1'], $_POST['OSNEARVA_1'], $_POST['ODMIDADD_1'], $_POST['OSMIDADD_1'],
-                0 + $_POST['RX_TYPE_1'], $_POST['COMMENTS_1'],
+                0 + ($_POST['RX_TYPE_1'] ?? null), ($_POST['COMMENTS_1'] ?? ''),
                 $_POST['ODHPD_1'], $_POST['ODHBASE_1'], $_POST['ODVPD_1'], $_POST['ODVBASE_1'], $_POST['ODSLABOFF_1'], $_POST['ODVERTEXDIST_1'],
                 $_POST['OSHPD_1'], $_POST['OSHBASE_1'], $_POST['OSVPD_1'], $_POST['OSVBASE_1'], $_POST['OSSLABOFF_1'], $_POST['OSVERTEXDIST_1'],
                 $_POST['ODMPDD_1'], $_POST['ODMPDN_1'], $_POST['OSMPDD_1'], $_POST['OSMPDN_1'], $_POST['BPDD_1'], $_POST['BPDN_1'], $_POST['LENS_MATERIAL_1'],
@@ -1139,7 +1117,7 @@ if ($_REQUEST["mode"] == "new") {
 
     echo json_encode($send);
     exit;
-} elseif ($_REQUEST["mode"] == "retrieve") {
+} elseif (($_REQUEST["mode"]  ?? '') == "retrieve") {
     if ($_REQUEST['PRIORS_query']) {
         if ($_REQUEST['zone'] == 'REFRACTIONS') {
             //TODO:  Fix this so it works!
@@ -1182,7 +1160,7 @@ if ($_REQUEST["mode"] == "new") {
  * Save the canvas drawings
  */
 
-if ($_REQUEST['canvas']) {
+if ($_REQUEST['canvas'] ?? '') {
     if (!$pid || !$encounter || !$zone || !$_POST["imgBase64"]) {
         exit;
     }
@@ -1191,40 +1169,48 @@ if ($_REQUEST['canvas']) {
     $base_name = $pid . "_" . $encounter . "_" . $side . "_" . $zone . "_VIEW";
     $filename = $base_name . ".jpg";
 
+    // we receive a canvas: adding or replacing this image
+    // Does it exist already? If so delete it. Yep.
+    //      We should not need to keep each progressive stroke on a canvas, just the last one...
+    //      We are attaching it ot this encounter so when the encounter is locked
+    //      this file should also be locked.  Right?
+    // Then add this.
+
+    $sql = "SELECT * from documents where documents.name like ?";
+    $ans1 = sqlQuery($sql, array('%' . $base_name . '%'));
+    if ($ans1['id']) {  //it is new, add it
+        $file = substr($ans1['url'], 7);
+        foreach (glob($file) as $file_to_delete) {
+            unlink($file_to_delete);
+        }
+        $query = "select id from categories where name like 'Drawings%'";
+        $result = sqlStatement($query);
+        $ID = sqlFetchArray($result);
+        $category_id = $ID['id'];//we need to know where to store this new one.
+
+        $sql = "DELETE from categories_to_documents where document_id = ?";
+        sqlQuery($sql, [$ans1['id']]);
+        $sql = "DELETE from documents where id = ?";
+        sqlQuery($sql, [$ans1['id']]);
+    }
+
     $type = "image/jpeg"; // all our canvases are this type
     $data = $_POST["imgBase64"];
     $data = substr($data, strpos($data, ",") + 1);
     $data = base64_decode($data);
     $size = strlen($data);
-    $query = "select id from categories where name = 'Drawings'";
-    $result = sqlStatement($query);
-    $ID = sqlFetchArray($result);
-    $category_id = $ID['id'];
 
-    // We want to overwrite so only one image is stored per zone per form/encounter
-    // I do not believe this function exists in the current library, ie "UpdateDocument" function, so...
-    //  we need to delete the previous file from the documents and categories to documents tables and the actual file
-    //  There must be a delete_file function in documents class?
-    // cannot find it.
-    // this will work for harddisk people, not sure about couchDB people:
-    $filepath = $GLOBALS['oer_config']['documents']['repository'] . $pid . "/";
-    foreach (glob($filepath . '/' . $filename) as $file) {
-        unlink($file);
-    }
-
-    $sql = "DELETE from categories_to_documents where document_id IN (SELECT id from documents where documents.url like ?)";
-    sqlQuery($sql, ['%' . $filename]);
-    $sql = "DELETE from documents where documents.url like ?";
-    sqlQuery($sql, ['%' . $filename]);
     $return = addNewDocument($filename, $type, $_POST["imgBase64"], 0, $size, $_SESSION['authUserID'], $pid, $category_id);
     $doc_id = $return['doc_id'];
     $sql = "UPDATE documents set encounter_id=? where id=?"; //link it to this encounter
     sqlQuery($sql, array($encounter, $doc_id));
+
+    echo "doc stored.";
     exit;
 }
 
 if ($_REQUEST['copy']) {
-    copy_forward($_REQUEST['zone'], $_REQUEST['copy_from'], $_SESSION['ID'], $pid);
+    copy_forward($_REQUEST['zone'], $_REQUEST['copy_from'], ($_SESSION['ID'] ?? ''), $pid);
     return;
 }
 

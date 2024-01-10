@@ -1,6 +1,27 @@
 <?php
 
-@define('__POSTCALENDAR__', 'PostCalendar');
+/**
+ * API for the calendar
+ *
+ * @package   OpenEMR
+ * @link      https://www.open-emr.org
+ * @copyright Copyright (c) 2002 The PostCalendar Team
+ * @copyright Copyright (c) 2021 Brady Miller <brady.g.miller@gmail.com>
+ * @author    The PostCalendar Team
+ * @author    Brady Miller <brady.g.miller@gmail.com>
+ * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
+*/
+
+use OpenEMR\Services\UserService;
+use OpenEMR\Events\Appointments\CalendarFilterEvent;
+use OpenEMR\Events\Appointments\CalendarUserGetEventsFilter;
+use OpenEMR\Events\Core\ScriptFilterEvent;
+use OpenEMR\Events\Core\StyleFilterEvent;
+
+if (!defined('__POSTCALENDAR__')) {
+    @define('__POSTCALENDAR__', 'PostCalendar');
+}
+
 /**
  *  $Id$
  *
@@ -30,15 +51,14 @@
 //=========================================================================
 //  Require utility classes
 //=========================================================================
-require_once($GLOBALS['fileroot'] . "/library/patient.inc");
-require_once($GLOBALS['fileroot'] . "/library/group.inc");
+
+require_once($GLOBALS['fileroot'] . "/library/patient.inc.php");
+require_once($GLOBALS['fileroot'] . "/library/group.inc.php");
 require_once($GLOBALS['fileroot'] . "/library/encounter_events.inc.php");
 $pcModInfo = pnModGetInfo(pnModGetIDFromName(__POSTCALENDAR__));
 $pcDir = pnVarPrepForOS($pcModInfo['directory']);
 require_once("modules/$pcDir/common.api.php");
 unset($pcModInfo, $pcDir);
-
-use OpenEMR\Events\Appointments\CalendarFilterEvent;
 
 /**
  *  postcalendar_userapi_buildView
@@ -97,7 +117,7 @@ function postcalendar_userapi_buildView($args)
     //  grab the for post variable
     //=================================================================
     // $pc_username = pnVarCleanFromInput('pc_username');
-    $pc_username = $_SESSION['pc_username']; // from Michael Brinson 2006-09-19
+    $pc_username = $_SESSION['pc_username'] ?? ''; // from Michael Brinson 2006-09-19
     $category = pnVarCleanFromInput('pc_category');
     $topic    = pnVarCleanFromInput('pc_topic');
 
@@ -306,13 +326,14 @@ function postcalendar_userapi_buildView($args)
 
                 //==================================
                 //FACILITY FILTERING (CHEMED)
+        $userService = new UserService();
         if ($_SESSION['pc_facility']) {
-            $provinfo = getProviderInfo('%', true, $_SESSION['pc_facility']);
+            $provinfo = $userService->getUsersForCalendar($_SESSION['pc_facility']);
             if (!$provinfo) {
-                $provinfo = getProviderInfo($_SESSION['authUserID'], 'any', '');
+                $provinfo = $userService->getUserForCalendar($_SESSION['authUserID']);
             }
         } else {
-            $provinfo = getProviderInfo();
+            $provinfo = $userService->getUsersForCalendar();
         }
 
                 //EOS FACILITY FILTERING (CHEMED)
@@ -521,6 +542,17 @@ function postcalendar_userapi_buildView($args)
             $tpl->assign('showdaysurl', "index.php?" . $_SERVER['QUERY_STRING'] . "&show_days=1");
         }
 
+        // we fire off events to grab any additional module scripts or css files that desire to adjust the calendar
+        $scriptFilterEvent = new ScriptFilterEvent('pnuserapi.php');
+        $scriptFilterEvent->setContextArgument('viewtype', $viewtype);
+        $calendarScripts = $GLOBALS['kernel']->getEventDispatcher()->dispatch($scriptFilterEvent, ScriptFilterEvent::EVENT_NAME);
+
+        $styleFilterEvent = new StyleFilterEvent('pnuserapi.php');
+        $styleFilterEvent->setContextArgument('viewtype', $viewtype);
+        $calendarStyles = $GLOBALS['kernel']->getEventDispatcher()->dispatch($styleFilterEvent, StyleFilterEvent::EVENT_NAME);
+
+        $tpl->assign('HEADER_SCRIPTS', $calendarScripts->getScripts());
+        $tpl->assign('HEADER_STYLES', $calendarStyles->getStyles());
         $tpl->assign('interval', $GLOBALS['calendar_interval']);
         $tpl->assign_by_ref('VIEW_TYPE', $viewtype);
         $tpl->assign_by_ref('A_MONTH_NAMES', $pc_month_names);
@@ -713,6 +745,7 @@ function &postcalendar_userapi_pcQueryEventsFA($args)
         $events[$i]['eventDate']   = $tmp['eventDate'];
         $events[$i]['duration']    = $tmp['duration'];
         // there has to be a more intelligent way to do this
+
         @list($events[$i]['duration_hours'],$dmin) = @explode('.', ($tmp['duration'] / 60 / 60));
         $events[$i]['duration_minutes'] = substr(sprintf('%.2f', '.' . 60 * ($dmin / 100)), 2, 2);
         //''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -825,7 +858,7 @@ function &postcalendar_userapi_pcQueryEvents($args)
   // echo "<!-- args = "; print_r($args); echo " -->\n"; // debugging
 
   // $pc_username = pnVarCleanFromInput('pc_username');
-    $pc_username = $_SESSION['pc_username']; // from Michael Brinson 2006-09-19
+    $pc_username = $_SESSION['pc_username'] ?? ''; // from Michael Brinson 2006-09-19
     if (empty($pc_username) || is_array($pc_username)) {
         $pc_username = "__PC_ALL__";
     }
@@ -838,7 +871,12 @@ function &postcalendar_userapi_pcQueryEvents($args)
         if ($pc_username == '__PC_ALL__' || $pc_username == -1) {
             $ruserid = -1;
         } else {
-            $ruserid = getIDfromUser($pc_username);
+            $user = (new UserService())->getIdByUsername($pc_username);
+            if ($user) {
+                $ruserid = $user;
+            } else {
+                $ruserid = -1;
+            }
         }
     }
 
@@ -888,7 +926,7 @@ function &postcalendar_userapi_pcQueryEvents($args)
 
     // Custom filtering
     $calFilterEvent = new CalendarFilterEvent();
-    $calFilterEvent = $GLOBALS["kernel"]->getEventDispatcher()->dispatch(CalendarFilterEvent::EVENT_HANDLE, $calFilterEvent, 10);
+    $calFilterEvent = $GLOBALS["kernel"]->getEventDispatcher()->dispatch($calFilterEvent, CalendarFilterEvent::EVENT_HANDLE, 10);
     $calFilter = $calFilterEvent->getCustomWhereFilter();
     $sql .= " AND $calFilter ";
 
@@ -935,7 +973,11 @@ function &postcalendar_userapi_pcQueryEvents($args)
         // get all events for a variety of provider IDs -- JRM
         if ($provider_id[0] != "_ALL_") {
             /**add all the events from the clinic provider id = 0*/
-            $sql .= "AND a.pc_aid in (0," . implode(",", $provider_id) . ") ";
+            $provider_id_esc = [];
+            foreach ($provider_id as $prov_id) {
+                $provider_id_esc[] = "'" . pnVarPrepForStore($prov_id) . "'";
+            }
+            $sql .= "AND a.pc_aid in (0," . implode(",", $provider_id_esc) . ") ";
         }
     } else {
         // get all events for logged in user plus global events
@@ -1017,7 +1059,11 @@ function &postcalendar_userapi_pcQueryEvents($args)
         // grab the name of the topic
         $topicname = pcGetTopicName($tmp['topic']);
         // get the user id of event's author
-        $cuserid = @$nuke_users[strtolower($tmp['uname'])];
+        if (!empty($nuke_users)) {
+            $cuserid = @$nuke_users[strtolower($tmp['uname'])];
+        } else {
+            $cuserid = '';
+        }
         // check the current event's permissions
         // the user does not have permission to view this event
         // if any of the following evaluate as false
@@ -1035,10 +1081,9 @@ function &postcalendar_userapi_pcQueryEvents($args)
         $events[$i]['time']        = $tmp['time'];
         $events[$i]['eventDate']   = $tmp['eventDate'];
         $events[$i]['duration']    = $tmp['duration'];
-        // there has to be a more intelligent way to do this
-        @list($events[$i]['duration_hours'],$dmin) = @explode('.', ($tmp['duration'] / 60 / 60));
+        $events[$i]['duration_hours'] = floor($tmp['duration'] / 3600);
+        $dmin = floor(($tmp['duration'] / 60) % 60);
         $events[$i]['duration_minutes'] = substr(sprintf('%.2f', '.' . 60 * ($dmin / 100)), 2, 2);
-        //''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
         $events[$i]['endDate']     = $tmp['endDate'];
         $events[$i]['startTime']   = $tmp['startTime'];
         $events[$i]['recurrtype']  = $tmp['recurrtype'];
@@ -1208,7 +1253,7 @@ function &postcalendar_userapi_pcGetEvents($args)
 
         $providerID = $providerID ?? '';
 
-        $a = array('start' => $start_date,'end' => $end_date,'s_keywords' => $s_keywords,'s_category' => $s_category,'s_topic' => $s_topic,'viewtype' => $viewtype, "sort" => "pc_startTime ASC, a.pc_duration ASC ",'providerID' => $providerID, 'provider_id' => $provider_id);
+        $a = array('start' => $start_date,'end' => $end_date,'s_keywords' => $s_keywords,'s_category' => $s_category,'s_topic' => $s_topic,'viewtype' => ($viewtype ?? null), "sort" => "pc_startTime ASC, a.pc_duration ASC ",'providerID' => $providerID, 'provider_id' => $provider_id);
         $events = pnModAPIFunc(__POSTCALENDAR__, 'user', 'pcQueryEvents', $a);
     }
 
@@ -1228,7 +1273,21 @@ function &postcalendar_userapi_pcGetEvents($args)
         $days[$store_date] = array();
     }
 
-    $days = calculateEvents($days, $events, $viewtype);
+    $days = calculateEvents($days, $events, ($viewtype ?? null));
+
+    $event = new CalendarUserGetEventsFilter();
+    $event->setEventsByDays($days);
+    $event->setViewType($viewtype);
+    $event->setKeywords($s_keywords);
+    $event->setCategory($s_category);
+    $event->setStartDate($start_date);
+    $event->setEndDate($end_date);
+    $event->setProviderID($providerID ?? $provider_id ?? null);
+
+    $result = $GLOBALS['kernel']->getEventDispatcher()->dispatch($event, CalendarUserGetEventsFilter::EVENT_NAME);
+    if ($result instanceof CalendarUserGetEventsFilter) {
+        $days = $result->getEventsByDays();
+    }
     return $days;
 }
 

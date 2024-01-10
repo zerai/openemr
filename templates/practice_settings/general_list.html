@@ -3,17 +3,16 @@
 <head>
     <title>{xlt t='Practice Settings'}</title>
 
-    {headerTemplate assets='common'}
+    {headerTemplate assets='common|datatables|datatables-colreorder|datatables-dt|datatables-bs'}
 
     <script>
-        {literal}
+
         $(function () {
             $('.sidebar-expand button').on('click', function () {
                 $(this).toggleClass("flip-y");
                 $('.nav-sidebar, .main-full').toggleClass("active");
             });
         });
-        {/literal}
     </script>
 </head>
 <body class="body-topnav">
@@ -54,4 +53,12 @@
       </main>
   </div>
 </body>
+<script>
+
+    $(document).ready(function(){
+        $('#pharmacies').dataTable({
+
+        });
+    });
+</script>
 </html>

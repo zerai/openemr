@@ -11,7 +11,7 @@
  */
 
 /** import supporting libraries */
-require_once("AppBaseController.php");
+require_once("AppBasePortalController.php");
 require_once("Model/OnsitePortalActivity.php");
 
 /**
@@ -23,9 +23,8 @@ require_once("Model/OnsitePortalActivity.php");
  * @author ClassBuilder
  * @version 1.0
  */
-class OnsitePortalActivityController extends AppBaseController
+class OnsitePortalActivityController extends AppBasePortalController
 {
-
     /**
      * Override here for any controller-specific functionality
      *
@@ -114,7 +113,7 @@ class OnsitePortalActivityController extends AppBaseController
             $onsiteportalactivity = $this->Phreezer->Get('OnsitePortalActivity', $pk);
             // only allow patient to update onsiteportalactivity about themself
             if (!empty($GLOBALS['bootstrap_pid'])) {
-                if ($GLOBALS['bootstrap_pid'] !== $onsiteportalactivity->PatientId) {
+                if ($GLOBALS['bootstrap_pid'] != $onsiteportalactivity->PatientId) {
                     $error = 'Unauthorized';
                     throw new Exception($error);
                 }

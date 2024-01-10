@@ -15,25 +15,26 @@
 
 <script>
 
-{literal}
-    function my_process_lookup(drug) {
+
+    function my_process_lookup(drug, rxcode = '') {
       // Pass the variable
-      var newOption = new Option(drug, drug, true, true);
+      let newOption = new Option(drug, drug, true, true);
+      $("#rxnorm_drugcode").val(rxcode);
       $('#drug').append(newOption).trigger('change');
       $('#hiddendiv').hide();
       $("#hiddendiv").html( "&nbsp;" );
     }
-{/literal}
+
 </script>
 <!---Gen Look up-->
-{literal}
+
 <script>
 
  // This holds all the default drug attributes.
  // This was html escaped previously
-{/literal}
- var drugopts = [{$DRUG_ATTRIBUTES}];
-{literal}
+
+ var drugopts = [{if !empty($DRUG_ATTRIBUTES)}{$DRUG_ATTRIBUTES}{/if}];
+
 
  // Helper to choose an option from its value.
  function selchoose(sel, value) {
@@ -70,7 +71,7 @@
  function dispense() {
   var f = document.forms[0];
   dlgopen('interface/drugs/dispense_drug.php' +
-   {/literal}'?drug_id=' + {$prescription->get_drug_id()|js_url} +{literal}
+   '?drug_id=' + {$prescription->get_drug_id()|js_url} +
    '&prescription=' + encodeURIComponent(f.id.value) +
    '&quantity=' + encodeURIComponent(f.disp_quantity.value) +
    '&fee=' + encodeURIComponent(f.disp_fee.value),
@@ -86,7 +87,7 @@
  }
 
 </script>
-{/literal}
+
 </head>
 <body id="prescription_edit">
 <div class="container">
@@ -96,7 +97,7 @@
                 <td class="title font-weight-bold">{xlt t='Add'}/{xlt t='Edit'}&nbsp;</td>
                 <td>
                     <a id="save" href=# onclick="submitfun();" class="btn btn-primary btn-sm btn-save">{xlt t='Save'}</a>
-                    {if $DRUG_ARRAY_VALUES}
+                    {if !empty($DRUG_ARRAY_VALUES)}
                     &nbsp; &nbsp; &nbsp; &nbsp;
                     {if $prescription->get_refills() >= $prescription->get_dispensation_count()}
                         <input type="submit" name="disp_button"class='btn btn-primary btn-sm my-0 mr-1 ml-1' value="{xla t='Save and Dispense'}" />
@@ -156,14 +157,29 @@
             <input type="hidden" name="patient_id" value="{$prescription->patient->id|attr}" />
         </div>
         <div class="form-group mt-3">
-            <label>{xlt t='Drug'}</label>
-            <select class="input-sm form-control" type="input" size="35" name="drug" id="drug"></select>
+            <label class="mr-2">{xlt t='Drug'}</label>
+            <div class="form-check-inline">
+                <label class="form-check-label" title="{xlt t='Search from native inventory drugs table'}">
+                    <input type="radio" class="form-check-input" name="rxcui_select" checked />{xlt t='Use Default'}
+                </label>
+            </div>
+            <div class="form-check-inline">
+                <label class="form-check-label" title="{xlt t='Search from external RxNorm table. Vocabulary RXNORM'}">
+                    <input type="radio" class="form-check-input" name="rxcui_select" {if empty($RXNORMS_AVAILABLE)} disabled{else} checked{/if} />{xlt t='Use RxNorm'}
+                </label>
+            </div>
+            <div class="form-check-inline">
+                <label class="form-check-label" title="{xlt t='Search from native loaded RxCUI table.'}">
+                    <input type="radio" class="form-check-input" name="rxcui_select" {if empty($RXCUI_AVAILABLE)}disabled{else} checked{/if}  />{xlt t='Use RxCUI'}
+                </label>
+            </div>
+            <select class="input-sm form-control" type="input" name="drug" id="drug"></select>
             <a href="javascript:;" id="druglookup" class="small" name="B4" onclick="$('#hiddendiv').show(); document.getElementById('hiddendiv').innerHTML='&lt;iframe src=&quot;controller.php?prescription&amp;lookup&amp;drug=&quot; width=&quot;100%&quot;height=&quot;75&quot; scrolling=&quot;no&quot; frameborder=&quot;no&quot;&gt;&lt;/iframe&gt;'">
-                ({xlt t='click here to search'})
+                ({xlt t='Search Web API'})
             </a>
             <div class="jumbotron jumbotron-fluid" id="hiddendiv" style="display: none">&nbsp;</div>
         </div>
-        {if $DRUG_ARRAY_VALUES}
+        {if !empty($DRUG_ARRAY_VALUES)}
         <div class="form-group mt-3">
             <label>&nbsp; {xlt t='in-house'}</label>
             <select class="input-sm form-control" name="drug_id" onchange="drugselected(this)">
@@ -260,13 +276,14 @@
 
         <input type="hidden" name="id" value="{$prescription->id|attr}" />
         <input type="hidden" name="process" value="{$PROCESS|attr}" />
+        <input type="hidden" id="rxnorm_drugcode" name="rxnorm_drugcode" value="{$prescription->rxnorm_drugcode|attr}" />
 
         <script>
-            {$ENDING_JAVASCRIPT}
+            {if !empty($ENDING_JAVASCRIPT)}{$ENDING_JAVASCRIPT}{/if}
         </script>
     </form>
 </div>
-{literal}
+
 <!-- for the fancy jQuery stuff -->
 <script>
 
@@ -300,19 +317,18 @@ $(function () {
         $("#addButton",window.parent.document).css("display", "");
     });
 
-    {/literal}
+
     {if $GLOBALS.weno_rx_enable}
-        {literal}
+
         $("#drug").select2({
         ajax: {
             url: "library/ajax/drug_autocomplete/search.php",
             dataType: 'json',
             data: function(params) {
                 return {
-                  {/literal}
                   csrf_token_form: {$CSRF_TOKEN_FORM|js_escape},
                   term: params.term
-                  {literal}
+
                 };
             },
             processResults: function(data) {
@@ -331,28 +347,28 @@ $(function () {
             minimumInputLength: 3
             }
           });
-        {/literal}
     {else}
-        {literal}
+
         $("#drug").select2({
         ajax: {
             url: "library/ajax/prescription_drugname_lookup.php",
             dataType: 'json',
             data: function(params) {
                 return {
-                  {/literal}
                   csrf_token_form: {$CSRF_TOKEN_FORM|js_escape},
-                  {literal}
-                  term: params.term
-                };
+
+                  term: params.term,
+                  use_rxnorm: document.prescribe.rxcui_select[1].checked,
+                  use_rxcui: document.prescribe.rxcui_select[2].checked
+                }
             },
             processResults: function(data) {
                 return  {
                     results: $.map(data, function(item, index) {
                         return {
-                            text: item,
-                            id: item,
-                            value: item
+                            text: item['display_name'],
+                            id: item['id_name'],
+                            value: item['display_name']
                         }
                     })
                 };
@@ -363,17 +379,15 @@ $(function () {
             tags: true,
             minimumInputLength: 3
           });
-        {/literal}
     {/if}
     {if $prescription->drug}
-        {literal}
+
         // Show the current drug name in the select
-        var newOption = new Option({/literal}{$prescription->drug|js_escape}, {$prescription->drug|js_escape}{literal}, true, true);
+        var newOption = new Option({$prescription->drug|js_escape}, {$prescription->drug|js_escape}, true, true);
         $('#drug').append(newOption).trigger('change');
-        {/literal}
     {/if}
 
-    {literal}
+
     $("#drug").focus();
     $("#prescribe").submit(function() { return CheckForErrors(this) });
 });
@@ -398,7 +412,7 @@ function CheckRequired(objID) {
     // for text boxes
     if ($('#'+objID).is('input')) {
         if ($('#'+objID).val() == "") {
-            alert({/literal}{xlj t='Missing a required field and will be highlighted'}{literal});
+            alert({xlj t='Missing a required field and will be highlighted'});
             $('#'+objID).css("backgroundColor", "pink");
             return false;
         }
@@ -407,7 +421,7 @@ function CheckRequired(objID) {
     // for select boxes
     if ($('#'+objID).is('select')) {
         if ($('#'+objID).val() == "0") {
-            alert({/literal}{xlj t='Missing a required field'}{literal});
+            alert({xlj t='Missing a required field'});
             $('#'+objID).css("backgroundColor", "pink");
             return false;
         }
@@ -416,13 +430,22 @@ function CheckRequired(objID) {
     return true;
 }
 
+    $(document).on('select2:select', 'select#drug', function(e) {
+        let idx = this.selectedIndex;
+        if (idx === 0) {
+            // already selected.
+            return false;
+        }
+        let optionText = document.getElementById("drug").options[idx].text;
+        let rxcode = (optionText.split('(RxCUI:').pop().split(')')[0]).trim();
+        $("#rxnorm_drugcode").val(rxcode);
+    });
 
-$(function () {{/literal}
+$(function () {
     {datetimepickerSupport input='format'}
-{literal}});</script>
+});</script>
 
 
 
-{/literal}
 </body>
 </html>

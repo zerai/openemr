@@ -4,9 +4,14 @@ namespace OpenEMR\Services\FHIR;
 
 use OpenEMR\FHIR\R4\FHIRDomainResource\FHIRPractitionerRole;
 use OpenEMR\FHIR\R4\FHIRElement\FHIRCodeableConcept;
+use OpenEMR\FHIR\R4\FHIRElement\FHIRMeta;
 use OpenEMR\FHIR\R4\FHIRElement\FHIRReference;
 use OpenEMR\FHIR\R4\FHIRElement\FHIRId;
 use OpenEMR\Services\PractitionerRoleService;
+use OpenEMR\Services\Search\FhirSearchParameterDefinition;
+use OpenEMR\Services\Search\SearchFieldType;
+use OpenEMR\Services\Search\ServiceField;
+use OpenEMR\Validators\ProcessingResult;
 
 /**
  * FHIR PractitionerRole Service
@@ -19,7 +24,7 @@ use OpenEMR\Services\PractitionerRoleService;
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  *
  */
-class FhirPractitionerRoleService extends FhirServiceBase
+class FhirPractitionerRoleService extends FhirServiceBase implements IResourceUSCIGProfileService
 {
     /**
      * @var PractitionerRoleService
@@ -39,8 +44,9 @@ class FhirPractitionerRoleService extends FhirServiceBase
     protected function loadSearchParameters()
     {
         return  [
-            "specialty" => ["specialty_code"],
-            "practitioner" => ["user_name"],
+            'specialty' => new FhirSearchParameterDefinition('specialty', SearchFieldType::TOKEN, ['specialty_code']),
+            'practitioner' => new FhirSearchParameterDefinition('practitioner', SearchFieldType::STRING, ['user_name']),
+            '_id' => new FhirSearchParameterDefinition('_id', SearchFieldType::TOKEN, [new ServiceField('providers.facility_role_uuid', ServiceField::TYPE_UUID)])
         ];
     }
 
@@ -55,17 +61,19 @@ class FhirPractitionerRoleService extends FhirServiceBase
     {
         $practitionerRoleResource = new FHIRPractitionerRole();
 
-        $meta = array('versionId' => '1', 'lastUpdated' => gmdate('c'));
+        $meta = new FHIRMeta();
+        $meta->setVersionId('1');
+        $meta->setLastUpdated(UtilsService::getDateFormattedAsUTC());
         $practitionerRoleResource->setMeta($meta);
 
         $id = new FHIRId();
         $id->setValue($dataRecord['uuid']);
         $practitionerRoleResource->setId($id);
 
-        if (!empty($dataRecord['user_uuid'])) {
+        if (!empty($dataRecord['provider_uuid'])) {
             $practitioner = new FHIRReference(
                 [
-                    'reference' => 'Practitioner/' . $dataRecord['user_uuid'],
+                    'reference' => 'Practitioner/' . $dataRecord['provider_uuid'],
                     'display' => $dataRecord['user_name']
                 ]
             );
@@ -84,14 +92,14 @@ class FhirPractitionerRoleService extends FhirServiceBase
         if (!empty($dataRecord['role_code'])) {
             $reason = new FHIRCodeableConcept();
             $reason->addCoding($dataRecord['role_code']);
-            $reason->setText($dataRecord['role']);
+            $reason->setText($dataRecord['role_title']);
             $practitionerRoleResource->addCode($reason);
         }
 
         if (!empty($dataRecord['specialty_code'])) {
             $reason = new FHIRCodeableConcept();
             $reason->addCoding($dataRecord['specialty_code']);
-            $reason->setText($dataRecord['specialty']);
+            $reason->setText($dataRecord['specialty_title']);
             $practitionerRoleResource->addCode($reason);
         }
 
@@ -136,35 +144,32 @@ class FhirPractitionerRoleService extends FhirServiceBase
     }
 
     /**
-     * Performs a FHIR PractitionerRole Resource lookup by FHIR Resource ID
-     * @param $fhirResourceId //The OpenEMR record's FHIR PractitionerRole Resource ID.
-     */
-    public function getOne($fhirResourceId)
-    {
-        $processingResult = $this->practitionerRoleService->getOne($fhirResourceId);
-        if (!$processingResult->hasErrors()) {
-            if (count($processingResult->getData()) > 0) {
-                $openEmrRecord = $processingResult->getData()[0];
-                $fhirRecord = $this->parseOpenEMRRecord($openEmrRecord);
-                $processingResult->setData([]);
-                $processingResult->addData($fhirRecord);
-            }
-        }
-        return $processingResult;
-    }
-
-    /**
      * Searches for OpenEMR records using OpenEMR search parameters
      *
      * @param array openEMRSearchParameters OpenEMR search fields
+     * @param $puuidBind - NOT USED
      * @return ProcessingResult
      */
-    public function searchForOpenEMRRecords($openEMRSearchParameters)
+    protected function searchForOpenEMRRecords($openEMRSearchParameters, $puuidBind = null): ProcessingResult
     {
-        return $this->practitionerRoleService->getAll($openEMRSearchParameters, false);
+        return $this->practitionerRoleService->search($openEMRSearchParameters);
     }
     public function createProvenanceResource($dataRecord = array(), $encode = false)
     {
         // TODO: If Required in Future
+    }
+
+    /**
+     * Returns the Canonical URIs for the FHIR resource for each of the US Core Implementation Guide Profiles that the
+     * resource implements.  Most resources have only one profile, but several like DiagnosticReport and Observation
+     * has multiple profiles that must be conformed to.
+     * @see https://www.hl7.org/fhir/us/core/CapabilityStatement-us-core-server.html for the list of profiles
+     * @return string[]
+     */
+    function getProfileURIs(): array
+    {
+        return [
+            'http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitionerrole'
+        ];
     }
 }

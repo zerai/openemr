@@ -28,7 +28,7 @@ if (!(function_exists('xl'))) {
         // convert new lines to spaces and remove windows end of lines
         $patterns = array ('/\n/','/\r/');
         $replace = array (' ','');
-        $constant = preg_replace($patterns, $replace, $constant);
+        $constant = preg_replace($patterns, $replace, $constant ?? '');
         // second, attempt translation
         $sql = "SELECT * FROM lang_definitions JOIN lang_constants ON " .
         "lang_definitions.cons_id = lang_constants.cons_id WHERE " .
@@ -40,7 +40,7 @@ if (!(function_exists('xl'))) {
             $string = "$constant";
         }
         // remove dangerous characters and remove comments
-        if ($GLOBALS['translate_no_safe_apostrophe']) {
+        if (!empty($GLOBALS['translate_no_safe_apostrophe'])) {
             $patterns = array ('/\n/','/\r/','/\{\{.*\}\}/');
             $replace = array (' ','','');
             $string = preg_replace($patterns, $replace, $string);

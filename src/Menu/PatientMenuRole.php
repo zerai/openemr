@@ -16,9 +16,16 @@ namespace OpenEMR\Menu;
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Services\UserService;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use OpenEMR\Menu\PatientMenuEvent;
 
 class PatientMenuRole extends MenuRole
 {
+    /*
+     * The event dispatcher we create in the constructor so we can let listeners know
+     * when we're rendering the menu.
+     */
+    protected $dispatcher;
 
     /**
      * Constructor
@@ -31,6 +38,7 @@ class PatientMenuRole extends MenuRole
         //   to functions in this class.
         parent::__construct();
         $this->menu_update_map["Modules"] = "updateModulesDemographicsMenu";
+        $this->dispatcher = $GLOBALS['kernel']->getEventDispatcher();
     }
 
     /**
@@ -68,11 +76,19 @@ class PatientMenuRole extends MenuRole
                 }
             }
         }
+
+        // Parse the menu JSON and build the menu. Also, tell the EventDispatcher about the event
+        // so that 3rd party modules may modify the menu items
         $menu_parsed = json_decode(json_encode($menu_parsed));
         $this->menuUpdateEntries($menu_parsed);
+        $updatedPatientMenuEvent = $this->dispatcher->dispatch(new PatientMenuEvent($menu_parsed), PatientMenuEvent::MENU_UPDATE);
+
         $menu_restrictions = array();
-        $this->menuApplyRestrictions($menu_parsed, $menu_restrictions);
-        return $menu_restrictions;
+        $tmp = $updatedPatientMenuEvent->getMenu();
+        $this->menuApplyRestrictions($tmp, $menu_restrictions);
+        $updatedPatientMenuRestrictions = $this->dispatcher->dispatch(new PatientMenuEvent($menu_restrictions), PatientMenuEvent::MENU_RESTRICT);
+
+        return $updatedPatientMenuRestrictions->getMenu();
     }
 
     /**
@@ -131,9 +147,9 @@ class PatientMenuRole extends MenuRole
     protected function updateModulesDemographicsMenu(&$menu_list)
     {
         $module_query = sqlStatement("SELECT msh.*,ms.obj_name,ms.menu_name,ms.path,m.mod_ui_name,m.type FROM modules_hooks_settings AS msh
-					                LEFT OUTER JOIN modules_settings AS ms ON obj_name=enabled_hooks AND ms.mod_id=msh.mod_id
-					                LEFT OUTER JOIN modules AS m ON m.mod_id=ms.mod_id
-					                WHERE fld_type=3 AND mod_active=1 AND sql_run=1 AND attached_to='demographics' ORDER BY mod_id");
+                                    LEFT OUTER JOIN modules_settings AS ms ON obj_name=enabled_hooks AND ms.mod_id=msh.mod_id
+                                    LEFT OUTER JOIN modules AS m ON m.mod_id=ms.mod_id
+                                    WHERE fld_type=3 AND mod_active=1 AND sql_run=1 AND attached_to='demographics' ORDER BY mod_id");
 
         if (sqlNumRows($module_query)) {
             while ($hookrow = sqlFetchArray($module_query)) {
@@ -149,7 +165,7 @@ class PatientMenuRole extends MenuRole
                     continue;
                 }
 
-                $relative_link = "../../modules/" . $modulePath . "/" . $hookrow['path'];
+                $relative_link = "../../modules/" . $modulePath . "/public/" . $hookrow['path'];
                 $mod_nick_name = $hookrow['menu_name'] ? $hookrow['menu_name'] : 'NoName';
 
                 $subEntry = new \stdClass();
@@ -180,19 +196,19 @@ class PatientMenuRole extends MenuRole
         <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#myNavbar" aria-controls="myNavbar" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
                 <div class="collapse navbar-collapse" id="myNavbar">
                     <ul class="navbar-nav">
-EOT;
+        EOT;
         echo $str_top . "\r\n";
         foreach ($menu_restrictions as $key => $value) {
             if (!empty($value->children)) {
                 // create dropdown if there are children (bootstrap3 horizontal nav bar with dropdown)
                 $class = isset($value->class) ? $value->class : '';
-                $list = '<li class="dropdown"><a href="#"  id="' . attr($value->menu_id) . '" class="nav-link dropdown-toggle font-weight-bold text-body ' . attr($class) . '" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">' . text($value->label) . ' <span class="caret"></span></a>';
+                $list = '<li class="dropdown"><a href="#"  id="' . attr($value->menu_id ?? $value->label) . '" class="nav-link dropdown-toggle text-body ' . attr($class) . '" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">' . text($value->label) . ' <span class="caret"></span></a>';
                 $list .= '<ul class="dropdown-menu">';
                 foreach ($value->children as $children_key => $children_value) {
                     $link = ($children_value->pid != "true") ? $children_value->url : $children_value->url . attr($pid);
-                    $class = isset($children_value->class) ? $children_value->class : '';
+                    $class = $children_value->class ?? '';
                     $list .= '<li class="nav-item ' . attr($class) . '" id="' . attr($children_value->menu_id) . '">';
-                    $list .= '<a class="nav-link font-weight-bold"  href="' . attr($link) . '" onclick="' . $children_value->on_click . '"> ' . text($children_value->label) . ' </a>';
+                    $list .= '<a class="nav-link text-dark"  href="' . attr($link) . '" onclick="' . $children_value->on_click . '"> ' . text($children_value->label) . ' </a>';
                     $list .= '</li>';
                 }
                 $list .= '</ul>';
@@ -200,7 +216,7 @@ EOT;
                 $link = ($value->pid != "true") ? $value->url : $value->url . attr($pid);
                 $class = isset($value->class) ? $value->class : '';
                 $list = '<li class="nav-item ' . attr($class) . '" id="' . attr($value->menu_id) . '">';
-                $list .= '<a class="nav-link font-weight-bold" href="' . attr($link) . '" onclick="' . $value->on_click . '"> ' . text($value->label) . ' </a>';
+                $list .= '<a class="nav-link text-dark" href="' . attr($link) . '" onclick="' . $value->on_click . '"> ' . text($value->label) . ' </a>';
                 $list .= '</li>';
             }
             echo $list . "\r\n";
@@ -210,7 +226,7 @@ EOT;
                 </ul>
             </div>
         </nav>
-EOB;
+        EOB;
         echo $str_bot . "\r\n";
         return;
     }

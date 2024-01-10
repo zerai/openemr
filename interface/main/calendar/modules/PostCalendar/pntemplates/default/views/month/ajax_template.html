@@ -247,7 +247,7 @@ foreach ($atmp as $currdate) {
 
     // set the TD class
     $tdClass = "tdMonthDay-small";
-    if (date('m', $currdate) != $month) {
+    if (!empty($month) && (date('m', $currdate) != $month)) {
         $tdClass = "tdOtherMonthDay-small";
     }
     if (is_weekend_day(date('w', $currdate))) {
@@ -331,18 +331,13 @@ if (count($facilities) > 1) {
 [-php-]
 if($_SESSION['pc_facility'] == 0){
 [-/php-]
-<div id="facilityColor" class="table-responsive">
- <table class="table table-borderless">
+<ul class="list-group list-group-flush" id="facilityColor">
 [-php-]
 foreach ($facilities as $f){
-  echo "   <tr>\n";
-  echo "   <td>\n";
-  echo "   <div class='view1 font-weight-bold text-ovr-dark p-1 rounded' style='background-color:".$f['color'].";'>" . text($f['name'])."</div>";
-  echo "   </td>\n";
-  echo "   </tr>\n";}
+    echo "<li class='list-group-item' style='border-left: 35px solid ".$f['color'].";'>" . text($f['name'])."</li>";
+}
 [-/php-]
- </table>
-</div>
+</ul>
 [-php-]
 }
 [-/php-]
@@ -407,12 +402,12 @@ foreach ($providers as $provider) {
         $eventdate = substr($date, 0, 4) . substr($date, 5, 2) . substr($date, 8, 2);
 
         $gotoURL = pnModURL(__POSTCALENDAR__,'user','view',
-                        array('tplview'=>$template_view,
+                        array('tplview'=>($template_view ?? null),
                         'viewtype'=>'day',
                         'Date'=> date("Ymd", strtotime($date)),
-                        'pc_username'=>$pc_username,
-                        'pc_category'=>$category,
-                        'pc_topic'=>$topic));
+                        'pc_username'=>($pc_username ?? null),
+                        'pc_category'=>($category ?? null),
+                        'pc_topic'=>($topic ?? null)));
 
         if (date("w", strtotime($date)) == $DOWlist[0]) { echo "<tr>"; }
         $classForWeekend = is_weekend_day(date('w', strtotime($date))) ? 'weekend-day' : 'work-day';
@@ -447,8 +442,8 @@ foreach ($providers as $provider) {
             }
 
             // figure the start time and minutes (from midnight)
-            $starth = substr($event['startTime'], 0, 2);
-            $startm = substr($event['startTime'], 3, 2);
+            $starth = (int) substr($event['startTime'], 0, 2);
+            $startm = (int) substr($event['startTime'], 3, 2);
             $eStartMin = $starth * 60 + $startm;
             $startDateTime = strtotime($date." ".$event['startTime']);
 
@@ -480,10 +475,12 @@ foreach ($providers as $provider) {
                     $evtClass = "event_appointment";
                     break;
             }
+            // eventViewClass allows the event class to override the template (such as from a dispatched system event).
+            $evtClass = $event['eventViewClass'] ?? $evtClass;
 
             // now, output the event DIV
 
-            $eventid = $event['eid'];
+            $eventid = $event['eid'] ?? null;
             $eventtype = sqlQuery("SELECT pc_cattype FROM openemr_postcalendar_categories as oc LEFT OUTER JOIN openemr_postcalendar_events as oe ON oe.pc_catid=oc.pc_catid WHERE oe.pc_eid=?", [$eventid]);
             $pccattype = '';
             if($eventtype['pc_cattype']==1)
@@ -492,9 +489,9 @@ foreach ($providers as $provider) {
             $commapos = strpos($event['patient_name'], ",");
             $lname = substr($event['patient_name'], 0, $commapos);
 	        $fname = substr($event['patient_name'], $commapos + 2);
-            $patient_dob = $event['patient_dob'];
+            $patient_dob = oeFormatShortDate($event['patient_dob']);
             $patient_age = $event['patient_age'];
-            $catid = $event['catid'];
+            $catid = $event['catid'] ?? null;
             $comment = $event['hometext'];
             $catname = $event['catname'];
             $title = "Age $patient_age ($patient_dob)";
@@ -555,7 +552,7 @@ foreach ($providers as $provider) {
                     $link_title = $fname . " " . $lname . " \n";
                     $link_title .= xl('Age') . ": " . $patient_age . "\n" . xl('DOB') . ": " . $patient_dob . $comment . "\n";
                     $link_title .= "(" . xl('Click to view') . ")";
-                    $content .= "<a href='javascript:goPid(" . attr_js($patientid) . ")' title='" . attr($link_title) . "'>";
+                    $content .= "<a class='link_title' data-pid='". attr($patientid) . "' href='javascript:goPid(" . attr_js($patientid) . ")' title='" . attr($link_title) . "'>";
                     $content .= "<img src='{$this->_tpl_vars['TPL_IMAGE_PATH']}/user-green.gif' onmouseover=\"javascript:ShowImage(" . attr_js($GLOBALS['webroot']."/controller.php?document&retrieve&patient_id=".$patientid."&document_id=-1&as_file=false&original_file=true&disable_exit=false&show_original=true&context=patient_picture") . ");\" onmouseout=\"javascript:HideImage();\" border='0' title='" . attr($link_title) . "' alt='View Patient' />";
                     if ($catid == 1) $content .= "<s>";
                     $content .= text($lname);
@@ -610,12 +607,12 @@ foreach ($providers as $provider) {
                      $divTitle .= "\n(" . xl('double click to edit') . ")";
                 }
             if($_SESSION['pc_facility'] == 0){
-                    echo "<div class='" . attr($evtClass) . " month_event' style='background-color:" . $color. "' title='" . attr($divTitle) . "'" . " id='" . attr($eventdate) . "-" . attr($eventid) . "-" . attr($pccattype) . "'" . ">";
+                    echo "<div data-eid='" . attr($eventid) . "' class='" . attr($evtClass) . " month_event' style='background-color:" . $color. "' title='" . attr($divTitle) . "'" . " id='" . attr($eventdate) . "-" . attr($eventid) . "-" . attr($pccattype) . "'" . ">";
                     echo $content;
                     echo "</div>\n";
             }
             elseif($_SESSION['pc_facility'] == $row['id']){
-                    echo "<div class='" . attr($evtClass) . " month_event' style='background-color:".$event["catcolor"].
+                    echo "<div data-eid='" . attr($eventid) . "' class='" . attr($evtClass) . " month_event' style='background-color:".$event["catcolor"].
                         "' title='" . attr($divTitle) . "'".
                         " id='" . attr($eventdate) . "-" . attr($eventid) . "-" . attr($pccattype) . "'".
                         ">";
@@ -623,7 +620,7 @@ foreach ($providers as $provider) {
                     echo "</div>\n";
             }
             else{
-                    echo "<div class='" . attr($evtClass) . " month_event' style='background-color: var(--gray300)' title='" . attr($divTitle) . "'" . " id='" . attr($eventdate) . "-" . attr($eventid) . "-" . attr($pccattype) . "'>";
+                    echo "<div data-eid='" . attr($eventid) . "' class='" . attr($evtClass) . " month_event' style='background-color: var(--gray300)' title='" . attr($divTitle) . "'" . " id='" . attr($eventdate) . "-" . attr($eventid) . "-" . attr($pccattype) . "'>";
                     echo "<span class='text-center text-danger'>" . text($displayTime) . " " . text($row['name'])."</span>";
                     echo "</div>\n";
             }

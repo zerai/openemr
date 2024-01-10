@@ -7,18 +7,20 @@
  * @link      http://www.open-emr.org
  * @author    Roberto Vasquez <robertogagliotta@gmail.com>
  * @author    Brady Miller <brady.g.miller@gmail.com>
+ * @author    Jerry Padgett <sjpadgett@gmail.com>
  * @copyright Copyright (c) 2015 Roberto Vasquez <robertogagliotta@gmail.com>
  * @copyright Copyright (c) 2018 Brady Miller <brady.g.miller@gmail.com>
+ * @copyright Copyright (c) 2018-2021 Jerry Padgett <sjpadgett@gmail.com>
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
 
-require_once("../../globals.php");
-require_once("$srcdir/forms.inc");
-require_once("$srcdir/patient.inc");
-require_once("$srcdir/lists.inc");
-require_once("../../../custom/code_types.inc.php");
+require_once(__DIR__ . "/../../globals.php");
+require_once("$srcdir/forms.inc.php");
+require_once("$srcdir/patient.inc.php");
+require_once("$srcdir/lists.inc.php");
+require_once(__DIR__ . "/../../../custom/code_types.inc.php");
 if ($GLOBALS['enable_group_therapy']) {
-    require_once("$srcdir/group.inc");
+    require_once("$srcdir/group.inc.php");
 }
 
 use OpenEMR\Common\Acl\AclMain;
@@ -51,7 +53,7 @@ $auth_demo = AclMain::aclCheckCore('patients', 'demo');
 $glog_view_write = AclMain::aclCheckCore("groups", "glog", false, array('view', 'write'));
 
 $tmp = getPatientData($pid, "squad");
-if ($tmp['squad'] && ! AclMain::aclCheckCore('squads', $tmp['squad'])) {
+if (($tmp['squad'] ?? null) && ! AclMain::aclCheckCore('squads', $tmp['squad'])) {
     $auth_notes_a = $auth_notes = $auth_coding_a = $auth_coding = $auth_med = $auth_demo = $auth_relaxed = 0;
 }
 
@@ -163,6 +165,7 @@ function generatePageElement($start, $pagesize, $billing, $issue, $text)
 }
 
 ?>
+<!DOCTYPE html>
 <html>
 <head>
 <!-- Main style sheet comes after the page-specific stylesheet to facilitate overrides. -->
@@ -220,21 +223,10 @@ function changePageSize() {
 window.onload = function() {
     $("#selPagesize").on("change", changePageSize);
 }
-
-// Mouseover handler for encounter form names. Brings up a custom tooltip
-// to display the form's contents.
-function efmouseover(elem, ptid, encid, formname, formid) {
- ttMouseOver(elem, "encounters_ajax.php?ptid=" + encodeURIComponent(ptid) + "&encid=" + encodeURIComponent(encid) +
-  "&formname=" + encodeURIComponent(formname) + "&formid=" + encodeURIComponent(formid) + "&csrf_token_form=" + <?php echo js_url(CsrfUtils::collectCsrfToken()); ?>);
-}
-
 </script>
-
 </head>
-
 <body>
-<div class="container mt-3" id="encounters"> <!-- large outer DIV -->
-
+<div class="container-fluid mt-3" id="encounters"> <!-- large outer DIV -->
     <span class='title'>
         <?php
         if ($issue) {
@@ -243,14 +235,12 @@ function efmouseover(elem, ptid, encid, formname, formid) {
             echo text($tmp['title']);
         } else {
             //There isn't documents for therapy group yet
-            echo $attendant_type == 'pid' ? xlt('Past Encounters and Documents') : xlt('Past Therapy Group Encounters');
+            echo $attendant_type == 'pid' ? xlt('Visit History') : xlt('Past Therapy Group Encounters');
         }
         ?>
     </span>
     <?php
     // Setup the GET string to append when switching between billing and clinical views.
-
-
     if (!($auth_notes_a || $auth_notes || $auth_coding_a || $auth_coding || $auth_med || $auth_relaxed) || ($is_group && !$glog_view_write)) {
         echo "<body>\n<html>\n";
         echo "<p>(" . xlt('Encounters not authorized') . ")</p>\n";
@@ -278,9 +268,9 @@ function efmouseover(elem, ptid, encid, formname, formid) {
     ?>
 
     <?php if ($billing_view) { ?>
-        <a href='encounters.php?billing=0&issue=<?php echo $issue . $getStringForPage; ?>' onclick='top.restoreSession()' style='font-size: 11px'>(<?php echo xlt('To Clinical View'); ?>)</a>
+        <a href='encounters.php?billing=0&issue=<?php echo $issue . $getStringForPage; ?>' class="btn btn-small btn-info" onclick='top.restoreSession()' style='font-size: 11px'><?php echo xlt('To Clinical View'); ?></a>
     <?php } else { ?>
-        <a href='encounters.php?billing=1&issue=<?php echo $issue . $getStringForPage; ?>' onclick='top.restoreSession()' style='font-size: 11px'>(<?php echo xlt('To Billing View'); ?>)</a>
+        <a href='encounters.php?billing=1&issue=<?php echo $issue . $getStringForPage; ?>' class="btn btn-small btn-info" onclick='top.restoreSession()' style='font-size: 11px'><?php echo xlt('To Billing View'); ?></a>
     <?php } ?>
 
     <span class="float-right">
@@ -288,7 +278,7 @@ function efmouseover(elem, ptid, encid, formname, formid) {
         <select class="form-control" id="selPagesize" billing="<?php echo attr($billing_view); ?>" issue="<?php echo attr($issue); ?>" pagestart="<?php echo attr($pagestart); ?>" >
             <?php
             $pagesizes = array(5, 10, 15, 20, 25, 50, 0);
-            for ($idx = 0; $idx < count($pagesizes); $idx++) {
+            for ($idx = 0, $idxMax = count($pagesizes); $idx < $idxMax; $idx++) {
                 echo "<option value='" . attr($pagesizes[$idx]) . "'";
                 if ($pagesize == $pagesizes[$idx]) {
                     echo " selected='true'>";
@@ -488,12 +478,10 @@ function efmouseover(elem, ptid, encid, formname, formid) {
                 }
 
                     $rawdata = $result4['encounter'] . "~" . oeFormatShortDate($raw_encounter_date);
-                    echo "<tr class='encrow text' id='" . attr($rawdata) .
-                    "'>\n";
+                    echo "<tr class='encrow text' id='" . attr($rawdata) . "'>\n";
 
                     // show encounter date
-                    echo "<td class='align-top' data-toggle='tooltip' data-placement='top' title='" . attr(xl('View encounter') . ' ' . $pid . "." . $result4['encounter']) . "'>" .
-                        text(oeFormatShortDate($raw_encounter_date)) . "</td>\n";
+                    echo "<td class='align-top' data-toggle='tooltip' data-placement='top' title='" . attr(xl('View encounter') . ' ' . $pid . "." . $result4['encounter']) . "'>" . text(oeFormatShortDate($raw_encounter_date)) . "</td>\n";
 
                 if ($billing_view) {
                     // Show billing note that you can click on to edit.
@@ -580,7 +568,7 @@ function efmouseover(elem, ptid, encid, formname, formid) {
                     // are list-based forms sharing a single collection of code.
                             if (substr($formdir, 0, 3) == 'LBF') {
                                 include_once($GLOBALS['incdir'] . "/forms/LBF/report.php");
-                                call_user_func("lbf_report", $pid, $result4['encounter'], 2, $enc['form_id'], $formdir);
+                                lbf_report($pid, $result4['encounter'], 2, $enc['form_id'], $formdir);
                             } else {
                                 include_once($GLOBALS['incdir'] . "/forms/$formdir/report.php");
                                 call_user_func($formdir . "_report", $pid, $result4['encounter'], 2, $enc['form_id']);
@@ -588,14 +576,14 @@ function efmouseover(elem, ptid, encid, formname, formid) {
                             echo "</div>";
                         } else {
                             $formDiv = "<div ";
+                            $formDir = attr($formdir);
+                            $formEnc = attr($result4['encounter']);
+                            $formId = attr($enc['form_id']);
+                            $formPid = attr($pid);
                             if (hasFormPermission($enc['formdir'])) {
-                                $formDiv .= "onmouseover='efmouseover(this," . attr_js($pid) . ","
-                                . attr_js($result4['encounter']) .
-                                "," . attr_js($formdir) . "," . attr_js($enc['form_id'])
-                                . ")' " .
-                                "onmouseout='ttMouseOut()'";
+                                $formDiv .= "data-toggle='PopOverReport' data-formpid='$formPid' data-formdir='$formDir' data-formenc='$formEnc' data-formid='$formId' ";
                             }
-                            $formDiv .= ">";
+                            $formDiv .= "data-original-title='" . text(xl_form_title($enc['form_name'])) . " <i>" . xla("Click or change focus to dismiss") . "</i>'>";
                             $formDiv .= text(xl_form_title($enc['form_name']));
                             $formDiv .= "</div>";
                             echo $formDiv;
@@ -645,8 +633,8 @@ function efmouseover(elem, ptid, encid, formname, formid) {
                         $arlinkend = "";
                         if ($billing_view) {
                                 $tmp = sqlQuery("SELECT id FROM form_encounter WHERE " .
-                                            "pid = ? AND encounter = ?", array($pid,$result4['encounter']));
-                                $arid = 0 + $tmp['id'];
+                                            "pid = ? AND encounter = ?", array($pid, $result4['encounter']));
+                                $arid = (int) $tmp['id'];
                             if ($arid) {
                                 $arinvoice = InvoiceSummary::arGetInvoiceSummary($pid, $result4['encounter'], true);
                             }
@@ -717,9 +705,9 @@ function efmouseover(elem, ptid, encid, formname, formid) {
                                         $binfo[$i] .= '&nbsp;';
                                     }
                                 } else {
-                                    $binfo[1] .= text(oeFormatMoney($arinvoice[$codekey]['chg'] + $arinvoice[$codekey]['adj']));
+                                    $binfo[1] .= text(oeFormatMoney($arinvoice[$codekey]['chg'] + ($arinvoice[$codekey]['adj'] ?? null)));
                                     $binfo[2] .= text(oeFormatMoney($arinvoice[$codekey]['chg'] - $arinvoice[$codekey]['bal']));
-                                    $binfo[3] .= text(oeFormatMoney($arinvoice[$codekey]['adj']));
+                                    $binfo[3] .= text(oeFormatMoney($arinvoice[$codekey]['adj'] ?? null));
                                     $binfo[4] .= text(oeFormatMoney($arinvoice[$codekey]['bal']));
                                     unset($arinvoice[$codekey]);
                                 }
@@ -728,6 +716,8 @@ function efmouseover(elem, ptid, encid, formname, formid) {
 
                         // Pick up any remaining unmatched invoice items from the accounting
                         // system.  Display them in red, as they should be unusual.
+                        // Except copays aren't unusual but displaying them in red
+                        // helps billers spot them quickly :)
                         if (!empty($arinvoice)) {
                             foreach ($arinvoice as $codekey => $val) {
                                 if ($binfo[0]) {
@@ -752,7 +742,7 @@ function efmouseover(elem, ptid, encid, formname, formid) {
 
                     echo "<td class='text'>" . $binfo[0] . "</td>\n";
                     for ($i = 1; $i < 5; ++$i) {
-                        echo "<td class='text right'>" . $binfo[$i] . "</td>\n";
+                        echo "<td class='text-right'>" . $binfo[$i] . "</td>\n";
                     }
                 } /* end if authorized */ else {
                     echo "<td class='text align-top' colspan='5' rowspan='" . attr($encounter_rows) . "'>(" . xlt("No access") . ")</td>\n";
@@ -767,26 +757,28 @@ function efmouseover(elem, ptid, encid, formname, formid) {
                                 $responsible = InvoiceSummary::arResponsibleParty($pid, $result4['encounter']);
                         }
                         $subresult5 = getInsuranceDataByDate($pid, $raw_encounter_date, "primary");
-                        if ($subresult5 && $subresult5["provider_name"]) {
+                        if (!empty($subresult5["provider_name"])) {
                             $style = $responsible == 1 ? " style='color: var(--danger)'" : "";
                             $insured = "<span class='text'$style>&nbsp;" . xlt('Primary') . ": " .
-                            text($subresult5["provider_name"]) . "</span><br />\n";
+                                text($subresult5["provider_name"]) . "</span><br />\n";
+                        } else {
+                            $insured = "<span class='text'>&nbsp;" . xlt('Primary') . ": </span><br />\n";
                         }
                         $subresult6 = getInsuranceDataByDate($pid, $raw_encounter_date, "secondary");
-                        if ($subresult6 && $subresult6["provider_name"]) {
+                        if (!empty($subresult6["provider_name"])) {
                             $style = $responsible == 2 ? " style='color: var(--danger)'" : "";
                             $insured .= "<span class='text'$style>&nbsp;" . xlt('Secondary') . ": " .
-                            text($subresult6["provider_name"]) . "</span><br />\n";
+                                text($subresult6["provider_name"]) . "</span><br />\n";
                         }
                         $subresult7 = getInsuranceDataByDate($pid, $raw_encounter_date, "tertiary");
-                        if ($subresult6 && $subresult7["provider_name"]) {
+                        if ($subresult6 && !empty($subresult7["provider_name"])) {
                             $style = $responsible == 3 ? " style='color: var(--danger)'" : "";
                             $insured .= "<span class='text'$style>&nbsp;" . xlt('Tertiary') . ": " .
-                            text($subresult7["provider_name"]) . "</span><br />\n";
+                                text($subresult7["provider_name"]) . "</span><br />\n";
                         }
                         if ($responsible == 0) {
                             $insured .= "<span class='text' style='color: var(--danger)'>&nbsp;" . xlt('Patient') .
-                                        "</span><br />\n";
+                                "</span><br />\n";
                         }
                     } else {
                         $insured = " (" . xlt("No access") . ")";
@@ -814,12 +806,11 @@ function efmouseover(elem, ptid, encid, formname, formid) {
 
                 if ($GLOBALS['enable_follow_up_encounters']) {
                     $encounterId = ( !empty($result4['parent_encounter_id']) ) ? $result4['parent_encounter_id'] : $result4['id'];
-                    echo "<td> <div style='z-index: 9999'>  <a href='#' class='btn btn-primary' onclick='createFollowUpEncounter(event," . attr_js($encounterId) . ")'><span>" . xlt('Create follow-up encounter') . "</span></a> </div></td>\n";
+                    echo "<td> <div style='z-index: 9999'>  <a href='#' class='btn btn-sm btn-primary' onclick='createFollowUpEncounter(event," . attr_js($encounterId) . ")'><span>" . xlt('Create follow-up encounter') . "</span></a> </div></td>\n";
                 }
 
                     echo "</tr>\n";
             } // end while
-
 
             // Dump remaining document lines if count not exceeded.
             while ($drow /* && $count <= $N */) {
@@ -832,8 +823,6 @@ function efmouseover(elem, ptid, encid, formname, formid) {
     </div>
 
 </div> <!-- end 'encounters' large outer DIV -->
-
-<div class='position-absolute border' id='tooltipdiv' style='width: 533px; padding:2px; background-color: #ffffaa; visibility: hidden; z-index: 1000; font-size: 12px;'></div>
 
 <script>
 // jQuery stuff to make the page a little easier to use
@@ -868,8 +857,73 @@ $(function () {
 
 $(function () {
     $('[data-toggle="tooltip"]').tooltip();
-});
+    // Report tooltip where popover will stay open for 30 seconds
+    // or mouse leaves popover or user clicks anywhere in popover.
+    $('body').popover({
+        sanitize: false,
+        title: function () {
+            return this.innerHTML;
+        },
+        content: function () {
+            let el = this;
+            if (typeof el.dataset == 'undefined') {
+                return xl("Report Unavailable");
+            }
+            let url = "encounters_ajax.php?ptid=" + encodeURIComponent(el.dataset.formpid) +
+                "&encid=" + encodeURIComponent(el.dataset.formenc) +
+                "&formname=" + encodeURIComponent(el.dataset.formdir) +
+                "&formid=" + encodeURIComponent(el.dataset.formid) +
+                "&csrf_token_form=" + <?php echo js_url(CsrfUtils::collectCsrfToken()); ?>;
+            let fetchedReport;
+            $.ajax({
+                url: url,
+                method: "GET",
+                async: false,
+                beforeSend: top.restoreSession,
+                success: function (report) {
+                    fetchedReport = report;
+                }
+            });
+            return fetchedReport;
+        },
+        selector: '[data-toggle="PopOverReport"]',
+        boundary: "window",
+        animation: false,
+        placement: "auto",
+        trigger: "hover focus",
+        html: true,
+        delay: {"show": 300, "hide": 30000},
+        template: '<div class="container"><div class="popover" style="max-width:fit-content;max-height:fit-content;" role="tooltip"><div class="arrow"></div><h3 class="popover-header bg-dark text-light"></h3><div class="popover-body bg-light text-dark"></div></div></div>'
+    });
+    // Report tooltip where popover will stay open for 30 seconds
+    // or mouse leaves popover or user clicks anywhere in popover.
+    // this will allow user to enter popover report view and scroll if report
+    // height is overflowed. Poporver will eiter close when mouse leaves view
+    // or user clicks anywhere in view.
+    $('[data-toggle="PopOverReport"]').on('show.bs.popover', function () {
+        let elements = $('[aria-describedby^="popover"]');
+        let thisOne = this.dataset.formid;
+        let thisTitle = this.dataset.formdir;
+        for (i = 0; i < elements.length; ++i) {
+            if (thisOne === elements[i].dataset.formid && thisTitle === elements[i].dataset.formdir) {
+                continue;
+            }
+            $(elements[i]).popover('hide');
+        }
+    });
 
+    $('[data-toggle="PopOverReport"]').on('shown.bs.popover', function () {
+
+        // set event listeners
+        $('.popover').click(function (e) {
+            $('[data-toggle="PopOverReport"]').popover('hide');
+        }).mouseleave(function (e) {
+            timeoutObj = setTimeout(function () {
+                $('[data-toggle="PopOverReport"]').popover('hide');
+            }, 100);
+        });
+    });
+});
 </script>
 </body>
 </html>

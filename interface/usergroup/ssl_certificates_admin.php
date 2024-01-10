@@ -23,12 +23,18 @@ require_once("../../library/create_ssl_certificate.php");
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
 use OpenEMR\Common\Session\SessionUtil;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 
 if (!empty($_POST)) {
     if (!CsrfUtils::verifyCsrfToken($_POST["csrf_token_form"])) {
         CsrfUtils::csrfNotVerified();
     }
+}
+
+if (!AclMain::aclCheckCore('admin', 'users')) {
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("SSL Certificate Administration")]);
+    exit;
 }
 
 /* This string contains any error messages if generating
@@ -323,21 +329,17 @@ function create_and_download_certificates()
     download_file($zipName, "zip");
 }
 
-if (!AclMain::aclCheckCore('admin', 'users')) {
-    exit();
-}
-
 /*if ($_POST["mode"] == "save_ssl_settings") {
   save_certificate_settings();
 }*/
 
-if ($_POST["mode"] == "create_client_certificate") {
+if (!empty($_POST["mode"]) && ($_POST["mode"] == "create_client_certificate")) {
     create_client_cert();
-} elseif ($_POST["mode"] == "download_certificates") {
+} elseif (!empty($_POST["mode"]) && ($_POST["mode"] == "download_certificates")) {
     create_and_download_certificates();
 }
 
-if ($_SESSION["zip_error"]) {
+if (!empty($_SESSION["zip_error"])) {
     $zipErrorOutput = '<div><table align="center"><tr valign="top"><td rowspan="3"><font class="redtext">' . text($_SESSION["zip_error"]) . '</td></tr></table></div>';
     SessionUtil::unsetSession('zip_error');
 }

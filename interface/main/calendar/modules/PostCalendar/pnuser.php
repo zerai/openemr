@@ -68,7 +68,7 @@ function postcalendar_user_view()
         $viewtype = $_SESSION['viewtype'];
     }
 
-    if ($_SESSION['pc_username']) {
+    if (!empty($_SESSION['pc_username'])) {
         $pc_username = $_SESSION['pc_username'];
     }
 
@@ -221,7 +221,7 @@ function postcalendar_user_search()
     // limit the number of results returned by getPatientPID
     // this helps to prevent the server from stalling on a request with
     // no PID and thousands of PIDs in the database -- JRM
-    // the function getPatientPID($pid, $given, $orderby, $limit, $start) <-- defined in library/patient.inc
+    // the function getPatientPID($pid, $given, $orderby, $limit, $start) <-- defined in library/patient.inc.php
     $plistlimit = 500;
     if (is_numeric($PatientID)) {
         $tpl->assign('PatientList', getPatientPID(array('pid' => $PatientID, 'limit' => $plistlimit)));
@@ -260,13 +260,13 @@ function postcalendar_user_search()
         $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildMonthSelect', array('pc_month' => $month,'selected' => $event_startmonth));
         $formdata .= $output->FormSelectMultiple('event_startmonth', $sel_data);
     } else {
-        $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildMonthSelect', array('pc_month' => $month,'selected' => $event_startmonth));
+        $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildMonthSelect', array('pc_month' => ($month ?? null),'selected' => $event_startmonth));
         $formdata = $output->FormSelectMultiple('event_startmonth', $sel_data);
-        $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildDaySelect', array('pc_day' => $day,'selected' => $event_startday));
+        $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildDaySelect', array('pc_day' => ($day ?? null),'selected' => $event_startday));
         $formdata .= $output->FormSelectMultiple('event_startday', $sel_data);
     }
 
-    $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildYearSelect', array('pc_year' => $year,'selected' => $event_startyear));
+    $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildYearSelect', array('pc_year' => ($year ?? null),'selected' => $event_startyear));
     $formdata .= $output->FormSelectMultiple('event_startyear', $sel_data);
     $output->SetOutputMode(_PNH_KEEPOUTPUT);
     $tpl->assign('SelectDateTimeStart', $formdata);
@@ -277,13 +277,13 @@ function postcalendar_user_search()
         $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildMonthSelect', array('pc_month' => $month,'selected' => $event_endmonth));
         $formdata .= $output->FormSelectMultiple('event_endmonth', $sel_data);
     } else {
-        $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildMonthSelect', array('pc_month' => $month,'selected' => $event_endmonth));
+        $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildMonthSelect', array('pc_month' => ($month ?? null),'selected' => $event_endmonth));
         $formdata = $output->FormSelectMultiple('event_endmonth', $sel_data);
-        $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildDaySelect', array('pc_day' => $day,'selected' => $event_endday ));
+        $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildDaySelect', array('pc_day' => ($day ?? null),'selected' => $event_endday ));
         $formdata .= $output->FormSelectMultiple('event_endday', $sel_data);
     }
 
-    $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildYearSelect', array('pc_year' => $year,'selected' => $event_endyear));
+    $sel_data = pnModAPIFunc(__POSTCALENDAR__, 'user', 'buildYearSelect', array('pc_year' => ($year ?? null),'selected' => $event_endyear));
     $formdata .= $output->FormSelectMultiple('event_endyear', $sel_data);
     $output->SetOutputMode(_PNH_KEEPOUTPUT);
     $tpl->assign('SelectDateTimeEnd', $formdata);

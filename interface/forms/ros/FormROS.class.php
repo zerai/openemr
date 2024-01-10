@@ -19,7 +19,6 @@ use OpenEMR\Common\ORDataObject\ORDataObject;
 
 class FormROS extends ORDataObject
 {
-
     /**
      *
      * @access public
@@ -38,6 +37,7 @@ class FormROS extends ORDataObject
 
     var $id;
     var $date;
+    var $date_of_onset;
     var $pid;
     var $weight_change = "N/A";
     var $weakness = "N/A";
@@ -92,7 +92,7 @@ class FormROS extends ORDataObject
     var $edema = "N/A";
     var $legpain_cramping = "N/A";
     var $history_murmur = "N/A";
-    var $arryhmia = "N/A";
+    var $arrythmia = "N/A";
     var $heart_problem = "N/A";
     var $dysphagia = "N/A";
     var $heartburn = "N/A";

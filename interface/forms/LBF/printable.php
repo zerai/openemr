@@ -16,12 +16,13 @@
 
 require_once(__DIR__ . "/../../globals.php");
 require_once("$srcdir/options.inc.php");
-require_once("$srcdir/patient.inc");
-require_once("$srcdir/encounter.inc");
+require_once("$srcdir/patient.inc.php");
+require_once("$srcdir/encounter.inc.php");
 require_once($GLOBALS['fileroot'] . '/custom/code_types.inc.php');
 
 use Mpdf\Mpdf;
 use OpenEMR\Common\Acl\AclMain;
+use OpenEMR\Pdf\Config_Mpdf;
 
 // Font size in points for table cell data.
 $FONTSIZE = 9;
@@ -31,7 +32,7 @@ $formname = isset($_GET['formname']) ? $_GET['formname'] : '';
 
 $patientid = empty($_REQUEST['patientid']) ? 0 : (0 + $_REQUEST['patientid']);
 if ($patientid < 0) {
-    $patientid = 0 + $pid; // -1 means current pid
+    $patientid = (int) $pid; // -1 means current pid
 }
 // PDF header information
 $patientname = getPatientName($patientid);
@@ -40,7 +41,7 @@ $dateofservice = fetchDateService($encounter);
 
 $visitid = empty($_REQUEST['visitid']) ? 0 : (0 + $_REQUEST['visitid']);
 if ($visitid < 0) {
-    $visitid = 0 + $encounter; // -1 means current encounter
+    $visitid = (int) $encounter; // -1 means current encounter
 }
 
 $formid = empty($_REQUEST['formid']) ? 0 : (0 + $_REQUEST['formid']);
@@ -54,6 +55,8 @@ $grparr = array();
 getLayoutProperties($formname, $grparr, '*');
 $lobj = $grparr[''];
 $formtitle = $lobj['grp_title'];
+$grp_last_update = $lobj['grp_last_update'];
+
 if (!empty($lobj['grp_columns'])) {
     $CPR = intval($lobj['grp_columns']);
 }
@@ -87,34 +90,12 @@ $PDF_OUTPUT = ($formid && $isblankform) ? false : true;
 //$PDF_OUTPUT = false; // debugging
 
 if ($PDF_OUTPUT) {
-    $config_mpdf = array(
-        'tempDir' => $GLOBALS['MPDF_WRITE_DIR'],
-        'mode' => $GLOBALS['pdf_language'],
-        'format' => $GLOBALS['pdf_size'],
-        'default_font_size' => '',
-        'default_font' => '',
-        'margin_left' => $GLOBALS['pdf_left_margin'],
-        'margin_right' => $GLOBALS['pdf_right_margin'],
-        'margin_top' => $GLOBALS['pdf_top_margin'],
-        'margin_bottom' => $GLOBALS['pdf_bottom_margin'],
-        'margin_header' => '',
-        'margin_footer' => '',
-        'orientation' => $GLOBALS['pdf_layout'],
-        'shrink_tables_to_fit' => 1,
-        'use_kwt' => true,
-        'autoScriptToLang' => true,
-        'keep_table_proportions' => true
-    );
+    $config_mpdf = Config_Mpdf::getConfigMpdf();
+    $config_mpdf['margin_top'] = $config_mpdf['margin_top'] * 1.5;
+    $config_mpdf['margin_bottom'] = $config_mpdf['margin_bottom'] * 1.5;
+    $config_mpdf['margin_header'] = $GLOBALS['pdf_top_margin'];
+    $config_mpdf['margin_footer'] =  $GLOBALS['pdf_bottom_margin'];
     $pdf = new mPDF($config_mpdf);
-    $pdf->SetHTMLHeader('
-		<div style="text-align: right; font-weight: bold;">
-			' . $patientname . ' DOB: ' . oeFormatShortDate($patientdob["DOB"]) . ' DOS: ' . oeFormatShortDate($dateofservice) . '
-		</div>');
-    $pdf->SetHTMLFooter('
-			<div style="float: right; width:33% text-align: left;">' . oeFormatDateTime(date("Y-m-d H:i:s")) . '</div>
-			<div style="float: right; width:33%; text-align: center; ">{PAGENO}/{nbpg}</div>
-			<div style="float: right; width:33%; text-align: right; ">' . $patientname . '</div>
-			');
     $pdf->SetDisplayMode('real');
     if ($_SESSION['language_direction'] == 'rtl') {
         $pdf->SetDirectionality('rtl');
@@ -194,7 +175,7 @@ div.section table {
  width: 100%;
 }
 div.section td.stuff {
- vertical-align: bottom;
+ vertical-align: top;
 <?php if ($isblankform) { ?>
  height: 16pt;
 <?php } ?>
@@ -278,13 +259,14 @@ for ($lcols = 1; $lcols < $CPR; ++$lcols) {
 $logo = '';
 $ma_logo_path = "sites/" . $_SESSION['site_id'] . "/images/ma_logo.png";
 if (is_file("$webserver_root/$ma_logo_path")) {
-    // Would use max-height here but html2pdf does not support it.
-    // TODO - now use mPDF, so should test if still need this fix
-    $logo = "<img src='$web_root/$ma_logo_path' style='height:" . attr(round($FONTSIZE * 5.14)) . "pt' />";
-} else {
-    $logo = "<!-- '$ma_logo_path' does not exist. -->";
+    $logo = "$web_root/$ma_logo_path";
 }
+
 echo genFacilityTitle($formtitle, -1, $logo);
+
+if ($PDF_OUTPUT) {
+    echo genPatientHeaderFooter($pid, $DOS = $dateofservice);
+}
 ?>
 
 <?php if ($isblankform) { ?>
@@ -322,25 +304,7 @@ function end_row()
 
 function getContent()
 {
-    global $web_root, $webserver_root;
     $content = ob_get_clean();
-    // Fix a nasty html2pdf bug - it ignores document root!
-    // TODO - now use mPDF, so should test if still need this fix
-    $i = 0;
-    $wrlen = strlen($web_root);
-    $wsrlen = strlen($webserver_root);
-    while (true) {
-        $i = stripos($content, " src='/", $i + 1);
-        if ($i === false) {
-            break;
-        }
-        if (
-            substr($content, $i + 6, $wrlen) === $web_root &&
-            substr($content, $i + 6, $wsrlen) !== $webserver_root
-        ) {
-            $content = substr($content, 0, $i + 6) . $webserver_root . substr($content, $i + 6 + $wrlen);
-        }
-    }
     return $content;
 }
 
@@ -445,7 +409,7 @@ while ($frow = sqlFetchArray($fres)) {
     if (($cell_count + $titlecols + $datacols) > $CPR || $cell_count == 0 || $prepend_blank_row || $jump_new_row) {
         end_row();
         if ($prepend_blank_row) {
-            echo "  <tr><td class='text' colspan='" . attr($CPR) . "'>&nbsp;</td></tr>\n";
+            echo "  <tr><td class='text' style='font-size:25%' colspan='" . attr($CPR) . "'>&nbsp;</td></tr>\n";
         }
         if (isOption($edit_options, 'RS')) {
             echo " <tr class='RS'>";
@@ -615,6 +579,10 @@ if ($fs && isset($LBF_DIAGS_SECTION)) {
 } // End Services Section
 
 ?>
+
+<p style='text-align:center' class='small'>
+  <?php echo text(xl('Rev.') . ' ' . substr($grp_last_update, 0, 10)); ?>
+</p>
 
 </form>
 <?php

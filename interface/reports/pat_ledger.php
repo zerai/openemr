@@ -15,12 +15,13 @@
  */
 
 require_once('../globals.php');
-require_once($GLOBALS['srcdir'] . '/patient.inc');
+require_once($GLOBALS['srcdir'] . '/patient.inc.php');
 require_once($GLOBALS['srcdir'] . '/options.inc.php');
 require_once($GLOBALS['srcdir'] . '/appointments.inc.php');
 
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Twig\TwigContainer;
 use OpenEMR\Core\Header;
 use OpenEMR\Menu\PatientMenuRole;
 use OpenEMR\OeUI\OemrUI;
@@ -46,7 +47,8 @@ $pat_pid = $_GET['patient_id'] ?? null;
 $type_form = $_GET['form'];
 
 if (! AclMain::aclCheckCore('acct', 'rep')) {
-    die(xlt("Unauthorized access."));
+    echo (new TwigContainer(null, $GLOBALS['kernel']))->getTwig()->render('core/unauthorized.html.twig', ['pageTitle' => xl("Patient Ledger by Date")]);
+    exit;
 }
 
 function GetAllUnapplied($pat = '', $from_dt = '', $to_dt = '')
@@ -69,6 +71,9 @@ function GetAllUnapplied($pat = '', $from_dt = '', $to_dt = '')
     $result = sqlStatement($sql, array($from_dt, $to_dt, $pat));
     $iter = 0;
     while ($row = sqlFetchArray($result)) {
+        if (!$row['applied']) {
+            continue;
+        }
         $all[$iter] = $row;
         $iter++;
     }
@@ -262,7 +267,7 @@ function PrintCreditDetail($detail, $pat, $unassigned = false)
         }
 
         $print_adj = '';
-        if ($adj_amt != 0) {
+        if (!empty($adj_amt)) {
             $print_adj = oeFormatMoney($adj_amt);
         }
 
@@ -275,7 +280,7 @@ function PrintCreditDetail($detail, $pat, $unassigned = false)
         $print .= "<td class='detail text-right'>" . text($print_bal) . "&nbsp;</td>";
         $print .= "</tr>\n";
         echo $print;
-        if ($pmt['follow_up_note'] != '') {
+        if (!empty($pmt['follow_up_note'])) {
             $bgcolor = (($bgcolor == "#FFFFDD") ? "#FFDDDD" : "#FFFFDD");
             $print = "<tr style='background-color:" . attr($bgcolor) . ";'>";
             $print .= "<td class='detail' colspan='2'>&nbsp;</td>";
@@ -631,7 +636,7 @@ $to_date = $form_to_date . ' 23:59:59';
 if ($_REQUEST['form_refresh'] || $_REQUEST['form_csvexport']) {
     $rows = array();
     $sqlBindArray = array();
-    $query = "select b.code_type, b.code, b.code_text, b.pid, b.provider_id, " .
+    $query = "select b.code_type, b.code, b.code_text, b.modifier, b.pid, b.provider_id, " .
     "b.billed, b.payer_id, b.units, b.fee, b.bill_date, b.id, " .
     "ins.name, " .
     "fe.encounter, fe.date, fe.reason, fe.provider_id " .
@@ -666,10 +671,11 @@ if ($_REQUEST['form_refresh'] || $_REQUEST['form_csvexport']) {
         }
     } else {
         if (!$form_facility) {
-            $form_facility = '3';
+            $facility = $facilityService->getPrimaryBusinessEntity();
+        } else {
+            $facility = $facilityService->getById($form_facility);
         }
 
-        $facility = $facilityService->getById($form_facility);
         $patient = sqlQuery("SELECT * from patient_data WHERE pid=?", array($form_patient));
         $pat_dob = $patient['DOB'] ?? null;
         $pat_name = ($patient['fname'] ?? '') . ' ' . ($patient['lname'] ?? '');
@@ -678,19 +684,19 @@ if ($_REQUEST['form_refresh'] || $_REQUEST['form_csvexport']) {
             <div class="table-responsive">
                 <table class="border-0 table" width="98%" cellspacing="0" cellpadding="0">
                     <tr>
-                        <td class="title"><?php echo text($facility['name']); ?></td>
+                        <td class="title"><?php echo text($facility['name'] ?? ''); ?></td>
                     </tr>
                     <tr>
-                        <td class="title"><?php echo text($facility['street']); ?></td>
+                        <td class="title"><?php echo text($facility['street'] ?? ''); ?></td>
                     </tr>
                     <tr>
-                        <td class="title"><?php echo text($facility['city']) . ", " . text($facility['state']) . " " . text($facility['postal_code']); ?></td>
+                        <td class="title"><?php echo text($facility['city'] ?? '') . ", " . text($facility['state'] ?? '') . " " . text($facility['postal_code'] ?? ''); ?></td>
                     </tr>
                     <tr>
-                        <td class="title"><?php echo xlt('Phone') . ': ' . text($facility['phone']); ?></td>
+                        <td class="title"><?php echo xlt('Phone') . ': ' . text($facility['phone'] ?? ''); ?></td>
                     </tr>
                     <tr>
-                        <td class="title"><?php echo xlt('Tax Id') . ': ' . text($facility['federal_ein']); ?></td>
+                        <td class="title"><?php echo xlt('Tax Id') . ': ' . text($facility['federal_ein'] ?? ''); ?></td>
                     </tr>
                     <tr><td>&nbsp;</td></tr>
                     <tr>
@@ -820,10 +826,14 @@ if ($_REQUEST['form_refresh'] || $_REQUEST['form_csvexport']) {
 
             $bgcolor = (($bgcolor == "#FFFFDD") ? "#FFDDDD" : "#FFFFDD");
             $print = "<tr style='background-color:" . attr($bgcolor) . ";'>";
-            $print .= "<td class='detail'>" . text($erow['code']) . "</td>";
+            $print .= "<td class='detail'>" . text($erow['code']);
+            if ($erow['modifier']) {
+                $print .= ":" . text($erow['modifier']);
+            }
+            $print .= "</td>";
             $print .= "<td class='detail' colspan='2'>" . text($code_desc) . "</td>";
             $who = ($erow['name'] == '') ? xl('Self') : $erow['name'];
-            $bill = substr($erow['bill_date'], 0, 10);
+            $bill = substr($erow['bill_date'] ?? '', 0, 10);
             if ($bill == '') {
                 $bill = 'unbilled';
             }
@@ -902,12 +912,12 @@ if ($_REQUEST['form_refresh'] || $_REQUEST['form_csvexport']) {
         # add one day to date so it will not get todays appointment
             $current_date2 = date('Y-m-d', $next_day);
             $events = fetchNextXAppts($current_date2, $form_pid);
-            $next_appoint_date = oeFormatShortDate($events[0]['pc_eventDate']);
-            $next_appoint_time = substr($events[0]['pc_startTime'], 0, 5);
-            if (strlen($events[0]['umname']) != 0) {
+            $next_appoint_date = oeFormatShortDate($events[0]['pc_eventDate'] ?? null);
+            $next_appoint_time = substr(($events[0]['pc_startTime'] ?? ''), 0, 5);
+            if (strlen($events[0]['umname'] ?? '') != 0) {
                 $next_appoint_provider = $events[0]['ufname'] . ' ' . $events[0]['umname'] . ' ' .  $events[0]['ulname'];
             } else {
-                $next_appoint_provider = $events[0]['ufname'] . ' ' .  $events[0]['ulname'];
+                $next_appoint_provider = ($events[0]['ufname'] ?? '') . ' ' .  ($events[0]['ulname'] ?? '');
             }
 
             if (strlen($next_appoint_time) != 0) { ?>

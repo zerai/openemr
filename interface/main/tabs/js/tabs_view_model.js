@@ -93,10 +93,26 @@ function tabRefresh(data,evt)
     top.restoreSession();
     // To do: Consider modification if part of frame.
     try {
+        /* eslint-disable-next-line no-self-assign */
         data.window.location = data.window.location;
         activateTab(data);
     } catch(e) {
         // Do nothing, but avoid exceptions caused by iFrames from different domain (ie NewCrop)
+    }
+}
+
+/**
+ *  Given a name, refresh that tab. This code is used to support custom code where it is required
+ *  to programmatically refresh a tab via javascript. This func may not be used by core code, please do not remove.
+ *
+ * @param name
+ */
+function tabRefreshByName(name) {
+    for (var tabIdx = 0; tabIdx < app_view_model.application_data.tabs.tabsList().length; tabIdx++) {
+        var curTab = app_view_model.application_data.tabs.tabsList()[tabIdx];
+        if (curTab.name() === name) {
+            tabRefresh(curTab);
+        }
     }
 }
 
@@ -131,7 +147,7 @@ function navigateTab(url,name,afterLoadFunction,loading_label='')
         if(typeof afterLoadFunction !== 'function'){
             $( "body" ).off( "load", "iframe[name='"+name+"']");
         } else {
-            $("iframe[name='"+name+"']").on('load', function () {
+            $("iframe[name='"+name+"']").one('load', function () {
                 afterLoadFunction();
             });
         }
@@ -183,6 +199,7 @@ function setEncounter(id)
 
 function chooseEncounterEvent(data,evt)
 {
+    top.restoreSession();
     setEncounter(data.id());
     goToEncounter(data.id());
 }
@@ -199,6 +216,7 @@ function goToEncounter(encId)
 
 function reviewEncounter(encId)
 {
+    top.restoreSession();
     var url=webroot_url+'/interface/patient_file/encounter/forms.php?review_id=' + encId;
     navigateTab(url,"rev",function () {
         activateTabByName("rev",true);
@@ -342,11 +360,11 @@ function menuActionClick(data,evt)
     }
     else
     {
-        if(data.requirement===1)
+        if(data.requirement === 1)
         {
-            alert((jsGlobals['globals']['enable_group_therapy'] == 1) ? xl('You must first select or add a patient or therapy group.') : xl('You must first select or add a patient.'));
+            alert((top.jsGlobals.enable_group_therapy == 1) ? xl('You must first select or add a patient or therapy group.') : xl('You must first select or add a patient.'));
         }
-        else if((data.requirement===2)||data.requirement===3)
+        else if((data.requirement === 2)||data.requirement === 3)
         {
             alert(xl('You must first select or create an encounter.'));
         }
@@ -366,21 +384,22 @@ function clearPatient()
         activateTabByName('fin',true);
     });
 
+    if (WindowTitleAddPatient)
+    {
+        top.document.title = WindowTitleBase;
+    }
+
     //Ajax call to clear active patient in session
     $.ajax({
         type: "POST",
         url: webroot_url+"/library/ajax/unset_session_ajax.php",
-	    data: {
+        data: {
             func: "unset_pid",
             csrf_token_form: csrf_token_js
         },
-	    success:function( msg ) {
-
-
-	    }
+        success:function( msg ) { }
 	});
 }
-
 
 function clearTherapyGroup()
 {

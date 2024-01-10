@@ -19,7 +19,6 @@ require_once("IncludeException.php");
  */
 class Includer
 {
-
     /**
      * Includes a file with the given path.
      * If PHP is unable to include the file,
@@ -96,7 +95,7 @@ class Includer
     /**
      * Handler for catching file-not-found errors and throwing an IncludeException
      */
-    public static function IncludeException($code, $string, $file, $line, $context)
+    public static function IncludeException($code, $string, $file, $line, $context = '')
     {
         // check for repressed errors
         if (error_reporting() == 0) {

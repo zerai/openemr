@@ -14,7 +14,7 @@
 
 namespace OpenEMR\Billing;
 
-require_once(dirname(__FILE__) . "/../../library/patient.inc");
+require_once(dirname(__FILE__) . "/../../library/patient.inc.php");
 
 use OpenEMR\Billing\BillingUtilities;
 
@@ -103,8 +103,20 @@ class SLEOB
 
     // Post a payment, new style.
     //
-    public static function arPostPayment($patient_id, $encounter_id, $session_id, $amount, $code, $payer_type, $memo, $debug, $time = '', $codetype = '')
-    {
+    public static function arPostPayment(
+        $patient_id,
+        $encounter_id,
+        $session_id,
+        $amount,
+        $code,
+        $payer_type,
+        $memo,
+        $debug,
+        $time = '',
+        $codetype = '',
+        $date = null,
+        $payer_claim_number = null
+    ) {
         $codeonly = $code;
         $modifier = '';
         $tmp = strpos($code, ':');
@@ -118,12 +130,33 @@ class SLEOB
         }
 
         sqlBeginTrans();
-        $sequence_no = sqlQuery("SELECT IFNULL(MAX(sequence_no),0) + 1 AS increment FROM ar_activity WHERE pid = ? AND encounter = ?", array($patient_id, $encounter_id));
+        $sequence_no = sqlQuery(
+            "SELECT IFNULL(MAX(sequence_no),0) + 1 AS increment FROM ar_activity WHERE pid = ? AND encounter = ?",
+            array($patient_id, $encounter_id)
+        );
         $query = "INSERT INTO ar_activity ( " .
-            "pid, encounter, sequence_no, code_type, code, modifier, payer_type, post_time, post_user, " .
-            "session_id, memo, pay_amount " .
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        sqlStatement($query, array($patient_id, $encounter_id, $sequence_no['increment'], $codetype, $codeonly, $modifier, $payer_type, $time, $_SESSION['authUserID'], $session_id, $memo, $amount));
+            "pid, encounter, sequence_no, code_type, code, modifier, payer_type, post_time, post_date, post_user, " .
+            "session_id, memo, pay_amount, payer_claim_number " .
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        sqlStatement(
+            $query,
+            array(
+                $patient_id,
+                $encounter_id,
+                $sequence_no['increment'],
+                $codetype,
+                $codeonly,
+                $modifier,
+                $payer_type,
+                $time,
+                $date,
+                $_SESSION['authUserID'],
+                $session_id,
+                $memo,
+                $amount,
+                $payer_claim_number
+            )
+        );
         sqlCommitTrans();
         return;
     }
@@ -213,9 +246,9 @@ class SLEOB
         $tmp = array(1 => 'primary', 2 => 'secondary', 3 => 'tertiary');
         $value = $tmp[$payer_type];
         $query = "SELECT provider FROM insurance_data WHERE " .
-            "pid = ? AND type = ? AND (date <= ? OR date IS NULL) " .
+            "pid = ? AND type = ? AND (date <= ? OR date IS NULL) AND (date_end >= ? OR date_end IS NULL) " .
             "ORDER BY date DESC LIMIT 1";
-        $nprow = sqlQuery($query, array($patient_id, $value, $date_of_service));
+        $nprow = sqlQuery($query, array($patient_id, $value, $date_of_service, $date_of_service));
         if (empty($nprow)) {
             return 0;
         }
@@ -258,6 +291,6 @@ class SLEOB
             }
         }
 
-        return xl("Encounter ") . $encounter . xl(" is ready for re-billing.");
+        return xl("Encounter ") . $encounter_id . xl(" is ready for re-billing.");
     }
 }

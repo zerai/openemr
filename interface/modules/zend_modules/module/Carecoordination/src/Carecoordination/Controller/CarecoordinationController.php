@@ -25,6 +25,8 @@ use Carecoordination\Model\CarecoordinationTable;
 use C_Document;
 use Document;
 use CouchDB;
+use OpenEMR\Common\Logging\SystemLogger;
+use OpenEMR\Services\Cda\CdaValidateDocuments;
 use xmltoarray_parser_htmlfix;
 
 class CarecoordinationController extends AbstractActionController
@@ -38,6 +40,16 @@ class CarecoordinationController extends AbstractActionController
      * @var Documents\Controller\DocumentsController
      */
     private $documentsController;
+
+    /**
+     * @var Application\Listener\Listener
+     */
+    private $listenerObject;
+
+    /**
+     * @var string
+     */
+    private $date_format;
 
     public function __construct(CarecoordinationTable $table, DocumentsController $documentsController)
     {
@@ -60,6 +72,31 @@ class CarecoordinationController extends AbstractActionController
         $this->redirect()->toRoute('encountermanager', array('action' => 'index'));
     }
 
+    /**
+     * delete an audit record
+     *
+     * @return ViewModel
+     */
+    public function deleteAuditAction()
+    {
+        $request = $this->getRequest();
+        $amid = $request->getPost('am_id') ?? null;
+        if ($amid) {
+            $this->getCarecoordinationTable()->deleteImportAuditData(array('audit_master_id' => $amid));
+        }
+        $category_details = $this->getCarecoordinationTable()->fetch_cat_id('CCDA');
+        $records = $this->getCarecoordinationTable()->document_fetch(array('cat_title' => 'CCDA', 'type' => '12'));
+        $view = new ViewModel(array(
+            'records' => $records,
+            'category_id' => $category_details[0]['id'],
+            'file_location' => basename($_FILES['file']['name'] ?? ''),
+            'patient_id' => '00',
+            'listenerObject' => $this->listenerObject
+        ));
+
+        return $view;
+    }
+
     /*
     * Upload CCDA file
     */
@@ -73,6 +110,24 @@ class CarecoordinationController extends AbstractActionController
         if ($action == 'add_new_patient') {
             $this->getCarecoordinationTable()->insert_patient($am_id, $document_id);
         }
+        if (($request->getPost('chart_all_imports') ?? null) === 'true' && empty($action)) {
+            $records = $this->getCarecoordinationTable()->document_fetch(array('cat_title' => 'CCDA', 'type' => '12'));
+            foreach ($records as $record) {
+                if (!empty($record['matched_patient']) && empty($record['is_unstructured_document'])) {
+                    // @todo figure out a way to make this auto. $data is array of doc changes.
+                    // $this->getCarecoordinationTable()->insertApprovedData($data);
+                    // meantime make user approve changes.
+                    continue;
+                }
+                $this->getCarecoordinationTable()->insert_patient($record['amid'], $record['document_id']);
+            }
+        }
+        if (($request->getPost('delete_all_imports') ?? null) === 'true' && empty($action)) {
+            $records = $this->getCarecoordinationTable()->document_fetch(array('cat_title' => 'CCDA', 'type' => '12'));
+            foreach ($records as $record) {
+                $this->getCarecoordinationTable()->deleteImportAuditData(array('audit_master_id' => $record['amid']));
+            }
+        }
 
         $upload = $request->getPost('upload');
         $category_details = $this->getCarecoordinationTable()->fetch_cat_id('CCDA');
@@ -80,13 +135,18 @@ class CarecoordinationController extends AbstractActionController
         if ($upload == 1) {
             $time_start = date('Y-m-d H:i:s');
             $obj_doc = $this->documentsController;
-            $cdoc = $obj_doc->uploadAction($request);
-            $uploaded_documents = array();
-            $uploaded_documents = $this->getCarecoordinationTable()->fetch_uploaded_documents(array('user' => $_SESSION['authUserID'], 'time_start' => $time_start, 'time_end' => date('Y-m-d H:i:s')));
-            if ($uploaded_documents[0]['id'] > 0) {
-                $_REQUEST["document_id"] = $uploaded_documents[0]['id'];
-                $_REQUEST["batch_import"] = 'YES';
-                $this->importAction();
+            if ($obj_doc->isZipUpload($request)) {
+                $this->importZipUpload($request);
+            } else {
+                $cdoc = $obj_doc->uploadAction($request);
+                $uploaded_documents = $this->getCarecoordinationTable()->fetch_uploaded_documents(
+                    array('user' => $_SESSION['authUserID'], 'time_start' => $time_start, 'time_end' => date('Y-m-d H:i:s'))
+                );
+                if ($uploaded_documents[0]['id'] > 0) {
+                    $_REQUEST["document_id"] = $uploaded_documents[0]['id'];
+                    $_REQUEST["batch_import"] = 'YES';
+                    $this->importAction();
+                }
             }
         } else {
             $result = $this->Documents()->fetchXmlDocuments();
@@ -100,13 +160,79 @@ class CarecoordinationController extends AbstractActionController
         }
 
         $records = $this->getCarecoordinationTable()->document_fetch(array('cat_title' => 'CCDA', 'type' => '12'));
+        foreach ($records as $key => $r) {
+            if (!empty($records[$key]['dupl_patient'] ?? null)) {
+                continue;
+            }
+            $name = $r['pat_name'];
+            // compare to the other imported items for duplicates being imported
+            foreach ($records as $k => $r1) {
+                $f = false;
+                $why = '';
+                if (!empty($r1['dupl_patient'] ?? null) || $key == $k) {
+                    if (!empty($records[$key]['matched_patient'] ?? null)) {
+                        $why = xlt('Duplicate demographics and components for MRN') . ' ' . text($records[$key]['pid'] ?? '');
+                        $records[$k]['dupl_patient'] = $why;
+                    }
+                    continue;
+                }
+                $n = $r1['pat_name'];
+                $fn = $r1['ad_fname'] == $r['ad_fname'];
+                $ln = $r1['ad_lname'] == $r['ad_lname'];
+                $dob = $r1['dob_raw'] == $r['dob_raw'];
+                if ($dob) {
+                    $f = true;
+                    $why = xlt('Match DOB');
+                }
+                if ($name == $n && ($f || $r1['race'] == $r['race'] || $r1['ethnicity'] == $r['ethnicity'])) {
+                    if ($f) {
+                        $why = xlt('Matched Demographic and DOB');
+                    } else {
+                        $why = xlt('Matched Demographic');
+                    }
+                    if ($r1['enc_count'] != $r['enc_count'] || $r1['cp_count'] != $r['cp_count'] || $r1['ob_count'] != $r['ob_count']) {
+                        $why .= ' ' . xlt('with Mismatched Components');
+                    }
+                    $f = true;
+                }
+                if (
+                    (($ln && !$fn || $fn && !$ln) && $dob)
+                    && ($r1['race'] == $r['race'] || $r1['ethnicity'] == $r['ethnicity'])
+                ) {
+                    $why = xlt('Name Misspelled');
+                    if (
+                        $r1['enc_count'] != $r['enc_count']
+                        || $r1['cp_count'] != $r['cp_count']
+                        || $r1['ob_count'] != $r['ob_count']
+                    ) {
+                        $why .= ' ' .  xlt('with Mismatched Components');
+                    }
+                    $f = true;
+                }
+                if (($r1['is_qrda_document'] ?? 0) === 2) {
+                    $f = false;
+                    $records[$k]['dupl_patient'] = xlt('Empty Report. No QDM content.');
+                }
+                if ($f) {
+                    if (empty($records[$k]['matched_patient']) && empty($records[$key]['matched_patient'])) {
+                        $why = xlt('Another imported document duplicates') . ' ' . $why;
+                    }
+                    $records[$key]['dupl_patient'] = $records[$k]['dupl_patient'] = $why;
+                }
+            }
+        }
+
         $view = new ViewModel(array(
             'records' => $records,
             'category_id' => $category_details[0]['id'],
-            'file_location' => basename($_FILES['file']['name']),
+            'file_location' => basename($_FILES['file']['name'] ?? ''),
             'patient_id' => '00',
             'listenerObject' => $this->listenerObject
         ));
+        // I haven't a clue why this delay is needed to allow batch to work from fetch.
+        if (!empty($upload)) {
+            sleep(1);
+        }
         return $view;
     }
 
@@ -126,129 +252,11 @@ class CarecoordinationController extends AbstractActionController
         }
 
         $document_id = $_REQUEST["document_id"];
-        $xml_content = $this->getCarecoordinationTable()->getDocument($document_id);
-        $xml_content_new = preg_replace('#<br />#', '', $xml_content);
-        $xml_content_new = preg_replace('#<br/>#', '', $xml_content_new);
+        $this->getCarecoordinationTable()->import($document_id);
 
-// Note the behavior of this relies on PHP's XMLReader
-// @see https://docs.zendframework.com/zend-config/reader/
-// @see https://php.net/xmlreader
-        $xmltoarray = new \Laminas\Config\Reader\Xml();
-        $array = $xmltoarray->fromString((string)$xml_content_new);
-
-        $patient_role = $array['recordTarget']['patientRole'];
-        $patient_pub_pid = $patient_role['id'][0]['extension'];
-        $patient_ssn = $patient_role['id'][1]['extension'];
-        $patient_address = $patient_role['addr']['streetAddressLine'];
-        $patient_city = $patient_role['addr']['city'];
-        $patient_state = $patient_role['addr']['state'];
-        $patient_postalcode = $patient_role['addr']['postalCode'];
-        $patient_country = $patient_role['addr']['country'];
-        $patient_phone_type = $patient_role['telecom']['use'];
-        $patient_phone_no = $patient_role['telecom']['value'];
-        $patient_fname = $patient_role['patient']['name']['given'][0];
-        $patient_lname = $patient_role['patient']['name']['given'][1];
-        $patient_family_name = $patient_role['patient']['name']['family'];
-        $patient_gender_code = $patient_role['patient']['administrativeGenderCode']['code'];
-        $patient_gender_name = $patient_role['patient']['administrativeGenderCode']['displayName'];
-        $patient_dob = $patient_role['patient']['birthTime']['value'];
-        $patient_marital_status = $patient_role['patient']['religiousAffiliationCode']['code'];
-        $patient_marital_status_display = $patient_role['patient']['religiousAffiliationCode']['displayName'];
-        $patient_race = $patient_role['patient']['raceCode']['code'];
-        $patient_race_display = $patient_role['patient']['raceCode']['displayName'];
-        $patient_ethnicity = $patient_role['patient']['ethnicGroupCode']['code'];
-        $patient_ethnicity_display = $patient_role['patient']['ethnicGroupCode']['displayName'];
-        $patient_language = $patient_role['patient']['languageCommunication']['languageCode']['code'];
-
-        $author = $array['recordTarget']['author']['assignedAuthor'];
-        $author_id = $author['id']['extension'];
-        $author_address = $author['addr']['streetAddressLine'];
-        $author_city = $author['addr']['city'];
-        $author_state = $author['addr']['state'];
-        $author_postalCode = $author['addr']['postalCode'];
-        $author_country = $author['addr']['country'];
-        $author_phone_use = $author['telecom']['use'];
-        $author_phone = $author['telecom']['value'];
-        $author_name_given = $author['assignedPerson']['name']['given'];
-        $author_name_family = $author['assignedPerson']['name']['family'];
-
-        $data_enterer = $array['recordTarget']['dataEnterer']['assignedEntity'];
-        $data_enterer_id = $data_enterer['id']['extension'];
-        $data_enterer_address = $data_enterer['addr']['streetAddressLine'];
-        $data_enterer_city = $data_enterer['addr']['city'];
-        $data_enterer_state = $data_enterer['addr']['state'];
-        $data_enterer_postalCode = $data_enterer['addr']['postalCode'];
-        $data_enterer_country = $data_enterer['addr']['country'];
-        $data_enterer_phone_use = $data_enterer['telecom']['use'];
-        $data_enterer_phone = $data_enterer['telecom']['value'];
-        $data_enterer_name_given = $data_enterer['assignedPerson']['name']['given'];
-        $data_enterer_name_family = $data_enterer['assignedPerson']['name']['family'];
-
-        $informant = $array['recordTarget']['informant'][0]['assignedEntity'];
-        $informant_id = $informant['id']['extension'];
-        $informant_address = $informant['addr']['streetAddressLine'];
-        $informant_city = $informant['addr']['city'];
-        $informant_state = $informant['addr']['state'];
-        $informant_postalCode = $informant['addr']['postalCode'];
-        $informant_country = $informant['addr']['country'];
-        $informant_phone_use = $informant['telecom']['use'];
-        $informant_phone = $informant['telecom']['value'];
-        $informant_name_given = $informant['assignedPerson']['name']['given'];
-        $informant_name_family = $informant['assignedPerson']['name']['family'];
-
-        $personal_informant = $array['recordTarget']['informant'][1]['relatedEntity'];
-        $personal_informant_name = $personal_informant['relatedPerson']['name']['given'];
-        $personal_informant_family = $personal_informant['relatedPerson']['name']['family'];
-
-        $custodian = $array['recordTarget']['custodian']['assignedCustodian']['representedCustodianOrganization'];
-        $custodian_name = $custodian['name'];
-        $custodian_address = $custodian['addr']['streetAddressLine'];
-        $custodian_city = $custodian['addr']['city'];
-        $custodian_state = $custodian['addr']['state'];
-        $custodian_postalCode = $custodian['addr']['postalCode'];
-        $custodian_country = $custodian['addr']['country'];
-        $custodian_phone = $custodian['telecom']['value'];
-        $custodian_phone_use = $custodian['telecom']['use'];
-
-        $informationRecipient = $array['recordTarget']['informationRecipient']['intendedRecipient'];
-        $informationRecipient_name = $informationRecipient['informationRecipient']['name']['given'];
-        $informationRecipient_name = $informationRecipient['informationRecipient']['name']['family'];
-        $informationRecipient_org = $informationRecipient['receivedOrganization']['name'];
-
-        $legalAuthenticator = $array['recordTarget']['legalAuthenticator'];
-        $legalAuthenticator_signatureCode = $legalAuthenticator['signatureCode']['code'];
-        $legalAuthenticator_id = $legalAuthenticator['assignedEntity']['id']['extension'];
-        $legalAuthenticator_address = $legalAuthenticator['assignedEntity']['addr']['streetAddressLine'];
-        $legalAuthenticator_city = $legalAuthenticator['assignedEntity']['addr']['city'];
-        $legalAuthenticator_state = $legalAuthenticator['assignedEntity']['addr']['state'];
-        $legalAuthenticator_postalCode = $legalAuthenticator['assignedEntity']['addr']['postalCode'];
-        $legalAuthenticator_country = $legalAuthenticator['assignedEntity']['addr']['country'];
-        $legalAuthenticator_phone = $legalAuthenticator['assignedEntity']['telecom']['value'];
-        $legalAuthenticator_phone_use = $legalAuthenticator['assignedEntity']['telecom']['use'];
-        $legalAuthenticator_name_given = $legalAuthenticator['assignedEntity']['assignedPerson']['name']['given'];
-        $legalAuthenticator_name_family = $legalAuthenticator['assignedEntity']['assignedPerson']['name']['family'];
-
-        $authenticator = $array['recordTarget']['authenticator'];
-        $authenticator_signatureCode = $authenticator['signatureCode']['code'];
-        $authenticator_id = $authenticator['assignedEntity']['id']['extension'];
-        $authenticator_address = $authenticator['assignedEntity']['addr']['streetAddressLine'];
-        $authenticator_city = $authenticator['assignedEntity']['addr']['city'];
-        $authenticator_state = $authenticator['assignedEntity']['addr']['state'];
-        $authenticator_postalCode = $authenticator['assignedEntity']['addr']['postalCode'];
-        $authenticator_country = $authenticator['assignedEntity']['addr']['country'];
-        $authenticator_phone = $authenticator['assignedEntity']['telecom']['value'];
-        $authenticator_phone_use = $authenticator['assignedEntity']['telecom']['use'];
-        $authenticator_name_given = $authenticator['assignedEntity']['assignedPerson']['name']['given'];
-        $authenticator_name_family = $authenticator['assignedEntity']['assignedPerson']['name']['family'];
-
-        $this->getCarecoordinationTable()->import($array, $document_id);
-
-        $view = new \Laminas\View\Model\JsonModel();
+        $view = new JsonModel();
         $view->setTerminal(true);
         return $view;
-// $view = new ViewModel(array());
-// $view->setTerminal(true);
-// return $view;
     }
 
     public function revandapproveAction()
@@ -427,6 +435,10 @@ class CarecoordinationController extends AbstractActionController
         $temp = '';
 
         switch ($component) {
+            case 'schematron':
+                $validate = new CdaValidateDocuments();
+                $temp .= $validate->createSchematronHtml($amid);
+                break;
             case 'allergies':
                 $allergies_audit = $this->getCarecoordinationTable()->createAuditArray($amid, 'lists2');
                 if (count($allergies_audit) > 0) {
@@ -735,7 +747,7 @@ class CarecoordinationController extends AbstractActionController
         </tr></thead>
     <tbody>';
                     foreach ($encounter_audit['encounter'] as $key => $val) {
-                        if ($val['code_text'] != 'NULL') {
+                        if (!empty($val['code_text'])) {
                             $encounter_activity = 'Active';
                         } else {
                             $encounter_activity = '';
@@ -747,8 +759,9 @@ class CarecoordinationController extends AbstractActionController
         <td>' . CommonPlugin::escape($val['provider_name']) . '</td>
         <td>' . CommonPlugin::escape($val['represented_organization_name']) . '</td>
         <td>' . ApplicationTable::fixDate($enc_date, $this->date_format, 'yyyy-mm-dd') . '</td>
-        <td>' . ($val['code_text'] != 'NULL' ? CommonPlugin::escape($val['code_text']) : '') . '</td>
+        <td>' . (!empty($val['code_text']) ? CommonPlugin::escape($val['encounter_diagnosis_issue']) : '') . '</td>
         <td>' . Listener::z_xlt($encounter_activity) . '</td>
+        <td>' . (!empty($val['code_text']) ? CommonPlugin::escape($val['code_text']) : '') . '</td>
         <td></td>
     </tr>';
                     }
@@ -880,5 +893,147 @@ class CarecoordinationController extends AbstractActionController
             $audit[$table_name] = []; // leave it empty so we don't fail in the template
         }
         return $audit;
+    }
+
+
+    private function sanitizeZip($zipLocation)
+    {
+        // TODO: @adunsulag NOTE that zip files can be in any order... so we can't assume that this is alphabetical
+        // to fix this may involve extracting the zip and re-ordering all of the entries...
+        // another one would be to just create hash map indexes with patient names mapped to nested documents...
+        // this will only be an issue if we are migrating documents as the CCDA files themselves are self-contained
+        // TODO: fire off an event about sanitizing the zip file
+        // should have sanitization settings and let someone filter them...
+        // event response should have a boolean for skipSanitization in case a module has already done the sanitization
+
+        $z = new \ZipArchive();
+        // if a zip file exist we want to overwrite it when we save
+        $z->open($zipLocation);
+        $z->setArchiveComment(""); // remove any comments so we don't deal with buffer overflows on the zip extraction
+        $patientCountHash = [];
+        $patientCount = 0;
+        $patientNameIndex = 1;
+        $patientDocumentsIndex = 2;
+        $maxPatients = 500;
+        $maxDocuments = 500;
+        $maxFileComponents = 5;
+
+        for ($i = 0; $i < $z->numFiles; $i++) {
+            $stat = $z->statIndex($i);
+            // explode and make sure we have our three parts
+            // our max directory structure is 4... anything more than that and we will bail
+            $fileComponents = explode("/", str_replace('\\', '/', $stat['name']), 5);
+            $componentCount = count($fileComponents);
+            $shouldDeleteIndex = false;
+
+            // now we need to do our document import for our ccda for this patient
+            if ($componentCount <= $patientNameIndex) {
+                $shouldDeleteIndex = false; // we don't want to delete if we are in folders before our patient name index
+            } elseif ($componentCount == ($patientNameIndex + 1)) {
+                // if they have more than maxDocuments in ccd files we need to break out of someone trying to directory
+                // bomb the file system
+                $patientCountHash[$patientNameIndex] = $patientCountHash[$patientNameIndex] ?? 0;
+
+                // let's check for ccda
+                if ($patientCount > $maxPatients) {
+                    $shouldDeleteIndex = true; // no more processing of patient ccdas as we've reached our max import size
+                } elseif ($patientCountHash[$patientNameIndex] > $maxDocuments) {
+                    $shouldDeleteIndex = true;
+                // can fire off events for modifying what files we keep / process...
+                // we don't process anything but xml ccds
+                } elseif (strrpos($fileComponents[$patientNameIndex], '.xml') === false) {
+                    $shouldDeleteIndex = true;
+                    // if we have a ccd we need to set our document count and increment our patient count
+                    // note this logic allows multiple patient ccds to be here as long as they are in the same folder
+                } elseif (!isset($patientCountHash[$fileComponents[$patientNameIndex]])) {
+                    $patientCountHash[$patientNameIndex] = 0;
+                    $patientCount++;
+                } else {
+                    $patientCountHash[$patientNameIndex];
+                }
+            } elseif ($componentCount == ($patientDocumentsIndex + 1)) {
+                if ($patientCountHash[$patientNameIndex] > $maxDocuments) {
+                    $shouldDeleteIndex = true;
+                } else {
+                    $patientCountHash[$patientNameIndex] += 1;
+                }
+            } else {
+                $shouldDeleteIndex = true;
+            }
+
+            // TODO: fire off an event with the patient name, current index, file name, and zip archive object
+            // we can filter on whether we should keep this and let module writers do their own thing if they want to
+            // retain any of the documents or not for their own custom processing.
+            if ($shouldDeleteIndex) {
+                $z->deleteIndex($i);
+            }
+        }
+        $z->close();
+    }
+
+    private function printZipContents($zipLocation)
+    {
+        $z = new \ZipArchive();
+        $z->open($zipLocation);
+        for ($i = 0; $i < $z->numFiles; $i++) {
+            $stat = $z->statIndex($i);
+            (new SystemLogger())->error("File in zip is " . $stat['name']);
+        }
+        $z->close();
+    }
+
+    private function importZipUpload($request)
+    {
+        // our file structure is
+        // import_name / patient_name / ccda.xml
+        // import_name / patient_name / ccda.html
+        // import_name / patient_name / ccda.xsl
+
+        // we will need to have these limit options configurable but we have to be careful to
+        // we will limit our docsToImport to 500
+        // we will limit our patientsToImport to 500
+
+        $z = new \ZipArchive();
+        $tmpFile = reset($_FILES);
+        $tmpFileName = $tmpFile['tmp_name'];
+        $this->printZipContents($tmpFileName);
+
+        // make sure we only have our documents folder and our ccda file
+        $this->sanitizeZip($tmpFileName);
+        $z->open($tmpFileName);
+        $category_details = $this->getCarecoordinationTable()->fetch_cat_id('CCDA');
+        $catId = $category_details[0]['id'] ?? null;
+        if (empty($catId)) {
+            throw new \RuntimeException("Could not find document category id for category of CCDA");
+        }
+        $auditMasterRecordByPatients = [];
+        for ($i = 0; $i < $z->numFiles; $i++) {
+            $stat = $z->statIndex($i);
+            // explode and make sure we have our three parts
+            // our max directory structure is 4... anything more than that and we will bail
+            $fileComponents = explode("/", str_replace('\\', '/', $stat['name']), 5);
+            $componentCount = count($fileComponents);
+
+            // now we need to do our document import for our ccda for this patient
+            if ($componentCount == 2) {
+                // let's process the ccda
+                $file_name = basename($stat['name']);
+
+                $pid = '00';
+                $ob = new Document();
+                $contents = $z->getFromIndex($i);
+                if (stripos($file_name, '.xml') !== false) {
+                    $ret = $ob->createDocument($pid, $catId, $file_name, 'text/xml', $contents);
+                    if (!empty($ret)) {
+                        throw new \RuntimeException("Failed to create document from zip file " . $file_name . " error returned was " . $ret);
+                    }
+
+                    $auditMasterRecordId = $this->getCarecoordinationTable()->import($ob->get_id());
+                    // we can use this to do any other processing as the files should be in order
+                    $auditMasterRecordByPatients[$fileComponents[2]] = $auditMasterRecordId;
+                }
+            }
+        }
+        $z->close();
     }
 }

@@ -33,7 +33,6 @@ if ( !defined('ADODB_DIR') ) {
 require_once(dirname(__FILE__) . "/../../library/sqlconf.php");
 require_once(dirname(__FILE__) . "/../../vendor/adodb/adodb-php/adodb.inc.php");
 require_once(dirname(__FILE__) . "/../../vendor/adodb/adodb-php/drivers/adodb-mysqli.inc.php");
-require_once(dirname(__FILE__) . "/../../library/ADODB_mysqli_mod.php");
 
 class Gacl {
 	/*
@@ -54,7 +53,7 @@ class Gacl {
 	var $_db_table_prefix = 'gacl_';
 
 	/** @var string The database type, based on available ADODB connectors - mysql, postgres7, sybase, oci8po See here for more: http://php.weblogs.com/adodb_manual#driverguide */
-	var $_db_type = 'mysqli_mod';
+	var $_db_type = 'mysqli';
 
 	/** @var string The database server */
 	var $_db_host = '';
@@ -73,6 +72,9 @@ class Gacl {
 
     /** @var boolean The utf8 encoding flag */
     var $_db_encoding_setting = '';
+
+    /** @var object An ADODB database connector object */
+    var $db;
 
 	/*
 	 * NOTE: 	This cache must be manually cleaned each time ACL's are modified.
@@ -158,6 +160,18 @@ class Gacl {
             // Can also support client based certificate if also include mysql-cert and mysql-key (this is optional for ssl)
             if (file_exists($GLOBALS['OE_SITE_DIR'] . "/documents/certificates/mysql-ca")) {
                 if (defined('MYSQLI_CLIENT_SSL')) {
+                    if (
+                        file_exists($GLOBALS['OE_SITE_DIR'] . "/documents/certificates/mysql-key") &&
+                        file_exists($GLOBALS['OE_SITE_DIR'] . "/documents/certificates/mysql-cert")
+                    ) {
+                        // with client side certificate/key
+                        $this->db->ssl_key = "{$GLOBALS['OE_SITE_DIR']}/documents/certificates/mysql-key";
+                        $this->db->ssl_cert = "{$GLOBALS['OE_SITE_DIR']}/documents/certificates/mysql-cert";
+                        $this->db->ssl_ca = "{$GLOBALS['OE_SITE_DIR']}/documents/certificates/mysql-ca";
+                    } else {
+                        // without client side certificate/key
+                        $this->db->ssl_ca = "{$GLOBALS['OE_SITE_DIR']}/documents/certificates/mysql-ca";
+                    }
                     $this->db->clientFlags = MYSQLI_CLIENT_SSL;
             	}
             }
@@ -533,7 +547,13 @@ class Gacl {
                                                 if ( isset($single_row[1]) AND $single_row[1] == 1 ) {
                                                         $allow = TRUE;
                                                 }
-                                                $retarr[] = array('acl_id' => &$single_row[0], 'return_value' => &$single_row[2], 'allow' => $allow);
+                                                if ($retarr === false) {
+                                                    // PHP 8.1 deprecates Autovivification on false and it will break in PHP 9.0, so need to set the
+                                                    //  array explicitly
+                                                    $retarr = [['acl_id' => &$single_row[0], 'return_value' => &$single_row[2], 'allow' => $allow]];
+                                                } else {
+                                                    $retarr[] = array('acl_id' => &$single_row[0], 'return_value' => &$single_row[2], 'allow' => $allow);
+                                                }
                                         }
                                 }
                                 else {
@@ -546,6 +566,9 @@ class Gacl {
 			} else {
                                 if ($return_all) {
 			                // Permission denied.
+                            if(!is_array($retarr)) {
+                                $retarr = [];
+                            }
 			                $retarr[] = array('acl_id' => NULL, 'return_value' => NULL, 'allow' => FALSE);
                                 }
                                 else {
@@ -708,6 +731,13 @@ class Gacl {
 		}
 
 		return false;
+	}
+
+	function clear_cache() {
+		if ( $this->_caching == TRUE ) {
+			$this->debug_text("clear_cache(): Clearing cache");
+			$this->Cache_Lite->clean();
+		}
 	}
 }
 ?>
