@@ -306,8 +306,8 @@ if (isset($_POST["privatemode"]) && $_POST["privatemode"] == "user_admin") {
             sqlStatement("update users set google_signin_email = ? where id = ? ", [$googleSigninEmail, $_POST["id"]]);
         }
 
-        $email = trim($_POST['email'] ?? '');
-        if ($email !== '') {
+        if (isset($_POST["email"])) {
+            $email = trim($_POST["email"]);
             sqlStatement("update users set email = ? where id = ? ", [$email, $_POST["id"]]);
         }
 
